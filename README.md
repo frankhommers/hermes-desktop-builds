@@ -4,6 +4,20 @@ Community builds of the **real, unmodified Nous Research Hermes Electron Desktop
 This is a build/distribution repository, not a Hermes fork, website wrapper, or the
 Tauri `Hermes-Setup` agent bootstrap installer. Not an official Nous Research release.
 
+## Verified preview
+
+[Download 0.17.0.1](https://github.com/frankhommers/hermes-desktop-builds/releases/tag/v0.17.0.1)
+— macOS arm64/x64 ZIPs, Windows x64 ZIP and Linux x64 tar.gz.
+
+All four extracted distributions passed native first-run/remote-form/PTY smoke tests
+([build evidence](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/33967548228)).
+The Mac cask passed audit, checksum download and actual installation on both Mac architectures
+([Homebrew evidence](https://github.com/frankhommers/homebrew-tap/actions/runs/33968443086)).
+These are **CI checks**, not a successful remote login or Gatekeeper/SmartScreen clearance.
+The initial full Linux suite reports 9,334 passed, 2 known failures and 6 skipped;
+the Windows targeted suite reports 70 passed and the documented POSIX-mode exception.
+Raw results and exception reasons accompany the release; no failing suite is labelled green.
+
 ## Scope
 
 Native CI lanes: macOS Apple Silicon (`arm64`), macOS Intel (`x64`), Windows x64,
@@ -46,7 +60,7 @@ Checksums, source pin and per-platform validation evidence accompany each releas
 The release ZIP contains a complete `Hermes.app`. Use the archive for your CPU.
 macOS 12+ is the initial binary metadata floor, not a tested compatibility matrix.
 
-Once the cask is published in [frankhommers/tap](https://github.com/frankhommers/homebrew-tap):
+Install via the verified cask in [frankhommers/tap](https://github.com/frankhommers/homebrew-tap):
 
 ```sh
 brew install --cask frankhommers/tap/hermes-desktop
