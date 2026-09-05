@@ -91,7 +91,8 @@ Check `sha256sum <archive.tar.gz>`, extract into a new directory with
 `tar -xzf <archive.tar.gz>`, then run `./Hermes/Hermes` in a graphical desktop session.
 System Electron/Chromium GUI libraries are required; see the upstream Electron Linux
 requirements. This tarball is not a distro package and does not register a launcher.
-Linux CI alone uses `--no-sandbox` because hosted/headless environments may restrict
+Linux CI launches the real Electron renderer with `--ozone-platform=headless` and
+`--no-sandbox` because hosted/headless environments may restrict
 Chromium user namespaces. That flag is **not** baked into the app or normal run advice.
 
 For all platforms choose the existing-remote route and configure your HTTPS backend.

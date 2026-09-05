@@ -117,7 +117,6 @@ def main():
     smoke_env=clean_environment(WORK/'smoke',pin)
     smoke_env.pop('GITHUB_SHA',None);smoke_env.pop('GITHUB_REF_NAME',None)
     command=[node,str(ROOT/'scripts/smoke.mjs'),str(src),str(binary),str(WORK/'smoke/h'),str(logs)]
-    if target=='linux' and shutil.which('xvfb-run'):command=['xvfb-run','-a']+command
     run('native-smoke',command,ROOT,smoke_env,logs)
     status=subprocess.check_output([git,'status','--porcelain','--untracked-files=no'],cwd=src,env=env,text=True)
     if status:raise RuntimeError('Tracked upstream files changed: '+status)
