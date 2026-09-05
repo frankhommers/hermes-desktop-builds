@@ -27,7 +27,20 @@ for(const name of entries){
     assert(!/\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{70,}|sk-proj-[A-Za-z0-9_-]{40,}|AKIA[A-Z0-9]{16})\b/.test(data.toString()),`Credential-shaped literal: ${name}`);
   }
   if(/\.(mjs|js|cjs)$/.test(name)){
-    const file=path.join(syntaxDir,'check'+(/\b(?:import|export)\s/.test(data.toString())?'.mjs':'.cjs'));
+    let extension=path.extname(name);
+    if(extension==='.js'){
+      let directory=path.posix.dirname(name);
+      while(true){
+        const candidate=(directory==='.'?'':directory+'/')+'package.json';
+        if(entries.includes(candidate)){
+          extension=JSON.parse(asar.extractFile(archive,candidate)).type==='module'?'.mjs':'.cjs';
+          break;
+        }
+        if(directory==='.') {extension='.cjs';break;}
+        directory=path.posix.dirname(directory);
+      }
+    }
+    const file=path.join(syntaxDir,'check'+extension);
     fs.writeFileSync(file,data);
     const result=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});
     assert.equal(result.status,0,`${name}: ${result.stderr}`);

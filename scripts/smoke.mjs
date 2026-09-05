@@ -9,13 +9,15 @@ assert(source&&binary&&home&&logs,'Usage: smoke.mjs source binary isolatedHome l
 const require=createRequire(path.join(source,'apps/desktop/package.json'));
 const {_electron}=require('playwright');
 assert.equal(fs.existsSync(path.join(home,'.hermes')),false,'Smoke HOME must be fresh');
-const args=['--user-data-dir='+path.join(home,'electron-data')];
+const env={...process.env};
+env.PATH=process.platform==='win32'?path.join(env.SystemRoot||env.SYSTEMROOT||'C:\\Windows','System32'):'/usr/bin:/bin:/usr/sbin:/sbin';
+const args=['--user-data-dir='+path.join(home,'u'),'--enable-logging=stderr'];
 // Linux CI only: no host kernel/security changes; never Mac/Windows install advice.
 if(process.platform==='linux')args.push('--disable-gpu','--no-sandbox',...(!process.env.DISPLAY?['--ozone-platform=headless']:[]));
 const errors=[];
 let app;
 try {
-  app=await _electron.launch({executablePath:binary,args,env:process.env,timeout:90000});
+  app=await _electron.launch({executablePath:binary,args,env,timeout:90000});
   const page=await app.firstWindow({timeout:90000});
   page.on('pageerror',err=>errors.push(String(err)));
   await page.getByText('Connect to existing Hermes',{exact:true}).waitFor({timeout:90000});

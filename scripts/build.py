@@ -15,6 +15,8 @@ from package import digest, native_inventory, inventory, make_archive, unpack_ar
 
 
 def main():
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run',action='store_true',help='Run a new isolated native build')
     parser.add_argument('--expected-platform',choices=['darwin','win32','linux'])
@@ -58,7 +60,7 @@ def main():
     gate=None
     if target=='linux':
         report=logs/'vitest.json'
-        rc=cmd('upstream-full-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(report)],desktop,True)
+        rc=cmd('upstream-full-tests',npm+['test','--','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)],desktop,True)
         gate=gate_test_report(json.loads(report.read_text()),pin,rc)
         (logs/'test-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
         print('FULL SUITE (exceptions are explicit):',json.dumps(gate),flush=True)
