@@ -1,9 +1,17 @@
 name: Build standalone desktops
 on:
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Optional exact build-repository commit required by the updater'
+        type: string
+        required: false
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: hermes-native-build-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   scripts:
     runs-on: ubuntu-24.04
@@ -11,9 +19,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Refuse a raced updater dispatch
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          python3 -c 'import os,re; expected=os.environ.get("EXPECTED_SHA", ""); assert not expected or (re.fullmatch("[0-9a-f]{40}",expected) and expected==os.environ["GITHUB_SHA"]), "Build revision changed after dispatch"'
       - run: python3 -m unittest discover -s tests -v
       - run: node --test tests/asar-paths.test.mjs tests/macos-signing.test.mjs
   build:
+    name: native-${{ matrix.platform }}-${{ matrix.arch }}
     if: github.event_name == 'workflow_dispatch'
     needs: scripts
     strategy:

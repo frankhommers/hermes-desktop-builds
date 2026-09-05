@@ -6,6 +6,9 @@ on:
         description: 'Successful main-branch native build run ID (all four targets)'
         type: string
         required: true
+  workflow_run:
+    workflows: ['Build standalone desktops']
+    types: [completed]
 permissions:
   actions: read
   contents: write
@@ -14,6 +17,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publish:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -23,36 +31,24 @@ jobs:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -v
       - name: Validate the native CI receipt and fetch its verified artifacts
-        shell: python
         env:
           GH_TOKEN: ${{ github.token }}
-          BUILD_RUN: ${{ inputs.build_run }}
-        run: |
-          import json, os, pathlib, re, subprocess
-          repo='frankhommers/hermes-desktop-builds'
-          run=os.environ['BUILD_RUN']
-          assert re.fullmatch('[1-9][0-9]*',run), 'Exact numeric run ID required'
-          receipt=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
-          assert receipt['repository']['full_name']==repo
-          assert receipt['head_repository']['full_name']==repo
-          assert receipt['head_branch']=='main' and receipt['event']=='workflow_dispatch'
-          assert receipt['path']=='.github/workflows/build.yml'
-          assert receipt['status']=='completed' and receipt['conclusion']=='success'
-          subprocess.run(['git','merge-base','--is-ancestor',receipt['head_sha'],'HEAD'],check=True)
-          pathlib.Path('out').mkdir(exist_ok=True)
-          pathlib.Path('out/build-receipt.json').write_text(json.dumps(receipt,indent=2))
-          subprocess.run(['gh','run','download',run,'--repo',repo,'--pattern','desktop-*','--dir','out/downloads'],check=True)
-          subprocess.run(['python3','scripts/release.py','--downloads','out/downloads','--destination','out/release','--run-url',receipt['html_url']],check=True)
+          BUILD_RUN: ${{ inputs.build_run || github.event.workflow_run.id }}
+        run: python3 scripts/ci_receipt.py --run "$BUILD_RUN"
       - name: Create draft, verify exact assets, then publish numbered Latest release
         shell: python
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          import json, pathlib, subprocess
+          import hashlib, json, pathlib, subprocess, sys
+          sys.path.insert(0, str(pathlib.Path('scripts').resolve()))
+          from ci_receipt import validate_release_order
           repo='frankhommers/hermes-desktop-builds'
           directory=pathlib.Path('out/release')
           manifest=json.loads((directory/'release-manifest.json').read_text())
           receipt=json.loads(pathlib.Path('out/build-receipt.json').read_text())
+          pages=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100','--paginate','--slurp']))
+          validate_release_order(manifest['version'],[release for page in pages for release in page])
           tag='v'+manifest['version']
           assets=sorted(p for p in directory.iterdir() if p.name!='RELEASE-NOTES.md')
           existing=subprocess.run(['gh','release','view',tag,'--repo',repo,'--json','apiUrl'],capture_output=True)
@@ -70,7 +66,11 @@ jobs:
           byname={a['name']:a for a in remote['assets']}
           for m in manifest['targets'].values():
               assert byname[m['archive']]['digest']=='sha256:'+m['sha256']
+          for asset in assets:
+              assert byname[asset.name]['digest']=='sha256:'+hashlib.sha256(asset.read_bytes()).hexdigest(), 'Uploaded asset digest mismatch: '+asset.name
           subprocess.run(['gh','release','edit',tag,'--repo',repo,'--draft=false','--prerelease=false','--latest=true'],check=True)
           final=json.loads(subprocess.check_output(['gh','api',endpoint]))
           assert not final['draft'] and not final['prerelease']
+          latest=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/latest']))
+          assert latest['id']==final['id'] and latest['tag_name']==tag
           print('Verified public release:',final['html_url'])

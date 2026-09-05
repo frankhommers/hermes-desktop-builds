@@ -52,24 +52,19 @@ index 0000000000000000000000000000000000000000..de835b161b10137d93a986bc28fb6e1b
 +  })
 +})
 diff --git a/apps/desktop/src/app/chat/sidebar/fleet-rail.ts b/apps/desktop/src/app/chat/sidebar/fleet-rail.ts
-index f0bdc16d0d692956c90db735d622ef8f932d65e2..d5f2b6a3f7c130695154300835e1a5176ac6b4b2 100644
+index f0bdc16d0d692956c90db735d622ef8f932d65e2..e9e4910d0cb053f41107e4ba059520bf467ebc55 100644
 --- a/apps/desktop/src/app/chat/sidebar/fleet-rail.ts
 +++ b/apps/desktop/src/app/chat/sidebar/fleet-rail.ts
-@@ -58,6 +58,7 @@ export function buildRestGroups({
-   roster: DesktopAgentRoster | null
- }): FleetGroup[] {
-   const groups: FleetGroup[] = []
-+  const remoteActive = connections.some(connection => connection.id === activeConnectionId && connection.kind !== 'local')
- 
-   for (const connection of sortConnectionsForDisplay(connections)) {
-     if (connection.id === activeConnectionId) {
-@@ -67,6 +68,12 @@ export function buildRestGroups({
+@@ -67,6 +67,15 @@ export function buildRestGroups({
      const source = roster?.sources.find(candidate => candidate.connectionId === connection.id)
      const rows = roster?.agents.filter(agent => agent.connectionId === connection.id) ?? []
  
-+    // An intentionally deferred local source has no agents to show. Keep real
-+    // failures and discovered profiles visible; this changes presentation only.
-+    if (connection.kind === 'local' && remoteActive && source?.error === 'connect-on-demand' && rows.length === 0) {
++    if (
++      connection.kind === 'local' &&
++      connections.some(candidate => candidate.id === activeConnectionId && candidate.kind !== 'local') &&
++      source?.error === 'connect-on-demand' &&
++      rows.length === 0
++    ) {
 +      continue
 +    }
 +
@@ -404,202 +399,37 @@ index 1e4e384cb111e499960c2f388ff803b11219402d..6a0e698f7b236867d36256ae48aede70
      desktop.probeConnectionConfig.mockResolvedValue({
        authMode: 'token',
 diff --git a/apps/desktop/src/components/desktop-install-overlay.tsx b/apps/desktop/src/components/desktop-install-overlay.tsx
-index 4f814832395a68dcb9c1c6bd8881599a17ab7eba..dc5cba12baf61eb6d6374022eb5960a4962aaf4f 100644
+index 4f814832395a68dcb9c1c6bd8881599a17ab7eba..61321c61656bccc7346ff7c10527989701ba0438 100644
 --- a/apps/desktop/src/components/desktop-install-overlay.tsx
 +++ b/apps/desktop/src/components/desktop-install-overlay.tsx
-@@ -15,7 +15,7 @@ import type {
-   DesktopBootstrapState
- } from '@/global'
- import { useI18n } from '@/i18n'
--import { AlertCircle, ChevronDown, ChevronRight, Globe, iconSize, Loader2, Monitor } from '@/lib/icons'
-+import { ChevronDown, ChevronRight, iconSize } from '@/lib/icons'
- import { capitalize } from '@/lib/text'
- import { cn } from '@/lib/utils'
- 
-@@ -157,10 +157,6 @@ function StageRow({ descriptor, result, now }: StageRowProps) {
-   )
- }
- 
--function errorMessage(err: unknown): string {
--  return err instanceof Error ? err.message : String(err || 'Unknown error')
--}
--
- const EMPTY_STATE: DesktopBootstrapState = {
-   active: false,
-   manifest: null,
-@@ -343,24 +339,6 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
-     }
-   }, [state.error])
- 
--  // The choice remains mounted while main hands off to local bootstrap. Once
--  // a manifest/failure takes ownership (or a later repair presents a fresh
--  // choice), this transient button state must not leak across phases — so it
--  // records the root it was produced under and is read back only under that
--  // same root. Deriving it beats clearing it in an effect: the choice paints
--  // as soon as the first snapshot commits, and a click landing before such an
--  // effect flushed would have its error wiped before it ever rendered.
--  const [localStart, setLocalStart] = useState<{
--    root: string | null
--    starting: boolean
--    error: string | null
--  }>({ root: null, starting: false, error: null })
--
--  const activeRoot = state.setupChoice?.activeRoot ?? null
--  const forActiveRoot = localStart.root === activeRoot
--  const localStarting = forActiveRoot && localStart.starting
--  const localStartError = forActiveRoot ? localStart.error : null
--
-   // Mount logic: show whenever a bootstrap is in flight, completed-with-error,
-   // or actively running with a manifest. Hide entirely after a successful
-   // completion so the rest of the UI can take over.
-@@ -392,141 +370,12 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
+@@ -392,11 +392,14 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
      return null
    }
  
 -  if (remoteOpen) {
 -    return <FirstRunRemoteForm onBack={() => setRemoteOpen(false)} />
--  }
--
--  if (state.setupChoice) {
--    return (
--      <div className="fixed inset-0 z-(--z-setup) flex items-center justify-center bg-background/90 p-4 backdrop-blur-md">
--        <div className="w-full max-w-2xl rounded-xl border border-(--stroke-nous) bg-card p-8 shadow-nous">
--          <div className="flex items-start gap-4">
--            <BrandMark className="size-11 shrink-0" />
--            <div className="min-w-0">
--              <h2 className="text-xl font-semibold tracking-tight">{copy.setupChoiceTitle}</h2>
--              <p className="mt-1.5 text-sm text-muted-foreground">{copy.setupChoiceDesc}</p>
--            </div>
--          </div>
--
--          <div className="mt-6 grid gap-3 sm:grid-cols-2">
--            <button
--              className="rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) p-4 text-left transition hover:bg-(--chrome-action-hover)"
--              onClick={() => setRemoteOpen(true)}
--              type="button"
--            >
--              <div className="flex items-center gap-2 text-sm font-medium">
--                <Globe className="size-4 text-muted-foreground" />
--                <span>{copy.connectExistingTitle}</span>
--              </div>
--              <p className="mt-2 text-sm leading-5 text-muted-foreground">{copy.connectExistingDesc}</p>
--            </button>
--
--            <button
--              className="rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) p-4 text-left transition hover:bg-(--chrome-action-hover) disabled:cursor-wait disabled:opacity-60"
--              disabled={localStarting}
--              onClick={async () => {
--                setLocalStart({ root: activeRoot, starting: true, error: null })
--
--                try {
--                  const desktop = window.hermesDesktop
--
--                  if (!desktop || typeof desktop.continueBootstrapLocal !== 'function') {
--                    throw new Error(copy.localStartUnavailable)
--                  }
--
--                  await desktop.continueBootstrapLocal()
--                } catch (err) {
--                  setLocalStart({ root: activeRoot, starting: false, error: errorMessage(err) })
--                }
--              }}
--              type="button"
--            >
--              <div className="flex items-center gap-2 text-sm font-medium">
--                {localStarting ? (
--                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
--                ) : (
--                  <Monitor className="size-4 text-muted-foreground" />
--                )}
--                <span>{copy.installLocalTitle}</span>
--              </div>
--              <p className="mt-2 text-sm leading-5 text-muted-foreground">{copy.installLocalDesc}</p>
--            </button>
--          </div>
--
--          {localStartError ? (
--            <div className="mt-4 flex items-start gap-2 text-sm text-destructive">
--              <AlertCircle className="mt-0.5 size-4 shrink-0" />
--              <span>{localStartError}</span>
--            </div>
--          ) : null}
-+  // Community builds offer a connection, not local installation. A real
-+  // bootstrap failure or in-flight local operation still owns its progress UI.
++  // Community build: offer a server connection, not local installation.
 +  const connectionSetup = !state.active && !state.error && Boolean(state.setupChoice || state.unsupportedPlatform)
- 
--          <div className="mt-6 text-xs text-muted-foreground">
--            {copy.installTo}{' '}
--            <code className="font-mono text-(--ui-text-secondary)">{state.setupChoice.activeRoot}</code>
--          </div>
--        </div>
--      </div>
--    )
--  }
--
--  // Unsupported-platform branch: macOS/Linux packaged builds hit this when
--  // there's no Hermes Agent installed yet and we can't drive install.sh
--  // (no stage protocol equivalent yet). Show a copy-paste install command
--  // and the docs URL; user runs it from Terminal and relaunches the app.
--  if (state.unsupportedPlatform) {
--    const ups = state.unsupportedPlatform
--    const platformLabel = ups.platform === 'darwin' ? 'macOS' : ups.platform === 'linux' ? 'Linux' : ups.platform
--
--    return (
--      <div className="fixed inset-0 z-(--z-setup) flex items-center justify-center bg-background/90 backdrop-blur-md">
--        <div className="w-full max-w-xl rounded-xl border border-(--stroke-nous) bg-card p-8 shadow-nous">
--          <h2 className="text-xl font-semibold tracking-tight">{copy.oneTimeTitle}</h2>
--          <p className="mt-2 text-sm text-muted-foreground">{copy.unsupportedDesc(platformLabel)}</p>
--
--          <div className="mt-4">
--            <div className="mb-1.5 text-xs font-medium text-muted-foreground">{copy.installCommand}</div>
--            <pre className="overflow-x-auto rounded-md border border-(--stroke-nous) px-3 py-2.5 font-mono text-[12px]">
--              <code>{ups.installCommand}</code>
--            </pre>
--            <div className="mt-2 flex items-center gap-2">
--              <Button
--                onClick={() => {
--                  void navigator.clipboard?.writeText(ups.installCommand).catch(() => {})
--                }}
--                size="sm"
--                variant="secondary"
--              >
--                {copy.copyCommand}
--              </Button>
--              <Button
--                onClick={() => {
--                  window.hermesDesktop?.openExternal?.(ups.docsUrl)
--                }}
--                size="sm"
--                variant="ghost"
--              >
--                {copy.viewDocs}
--              </Button>
--            </div>
--          </div>
--
--          <div className="mt-6 flex items-center justify-between pt-2">
--            <span className="text-xs text-muted-foreground">
--              {copy.installTo} <code className="font-mono text-(--ui-text-secondary)">{ups.activeRoot}</code>
--            </span>
--            <div className="flex items-center gap-2">
--              <Button onClick={() => setRemoteOpen(true)} size="sm" variant="secondary">
--                <Globe className="size-4" />
--                {copy.connectExistingShort}
--              </Button>
--              <Button onClick={() => window.location.reload()} size="sm" variant="default">
--                {copy.retryAfterRun}
--              </Button>
--            </div>
--          </div>
--        </div>
--      </div>
--    )
++
 +  if (remoteOpen || connectionSetup) {
-+    return <FirstRunRemoteForm onBack={connectionSetup ? undefined : () => setRemoteOpen(false)} />
++    return <FirstRunRemoteForm onBack={() => setRemoteOpen(false)} showBack={!connectionSetup} />
    }
  
-   const stages = state.manifest?.stages || []
-@@ -695,23 +544,11 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
+-  if (state.setupChoice) {
++  if (state.setupChoice && !state.active && !state.error) {
+     return (
+       <div className="fixed inset-0 z-(--z-setup) flex items-center justify-center bg-background/90 p-4 backdrop-blur-md">
+         <div className="w-full max-w-2xl rounded-xl border border-(--stroke-nous) bg-card p-8 shadow-nous">
+@@ -473,7 +476,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
+   // there's no Hermes Agent installed yet and we can't drive install.sh
+   // (no stage protocol equivalent yet). Show a copy-paste install command
+   // and the docs URL; user runs it from Terminal and relaunches the app.
+-  if (state.unsupportedPlatform) {
++  if (state.unsupportedPlatform && !state.active && !state.error) {
+     const ups = state.unsupportedPlatform
+     const platformLabel = ups.platform === 'darwin' ? 'macOS' : ups.platform === 'linux' ? 'Linux' : ups.platform
+ 
+@@ -695,23 +698,11 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
                    {copied ? copy.copiedOutput : copy.copyOutput}
                  </Button>
                  <Button
@@ -626,35 +456,33 @@ index 4f814832395a68dcb9c1c6bd8881599a17ab7eba..dc5cba12baf61eb6d6374022eb5960a4
                </div>
              </div>
 diff --git a/apps/desktop/src/components/first-run-remote-form.tsx b/apps/desktop/src/components/first-run-remote-form.tsx
-index 411bb54fbc6d0a1e5d5ff3fdef2a533b2e8f3efd..f59d28a222f41b073002f8b1718ea15ca493b582 100644
+index 411bb54fbc6d0a1e5d5ff3fdef2a533b2e8f3efd..934d6914069d5b54086eb8328e5799e7edc4bfd0 100644
 --- a/apps/desktop/src/components/first-run-remote-form.tsx
 +++ b/apps/desktop/src/components/first-run-remote-form.tsx
-@@ -13,7 +13,7 @@ type AuthMode = 'oauth' | 'token'
- type ProbeStatus = 'idle' | 'probing' | 'done' | 'error'
+@@ -14,13 +14,14 @@ type ProbeStatus = 'idle' | 'probing' | 'done' | 'error'
  
  interface FirstRunRemoteFormProps {
--  onBack: () => void
-+  onBack?: () => void
+   onBack: () => void
++  showBack?: boolean
  }
  
  function errorMessage(err: unknown): string {
-@@ -218,7 +218,7 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
-     }
+   return err instanceof Error ? err.message : String(err || 'Unknown error')
+ }
  
-     if (applied) {
--      onBack()
-+      onBack?.()
-     }
-   }
- 
-@@ -321,9 +321,11 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
+-export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
++export function FirstRunRemoteForm({ onBack, showBack = true }: FirstRunRemoteFormProps) {
+   const { t } = useI18n()
+   const copy = t.install
+   const [remoteUrl, setRemoteUrl] = useState('')
+@@ -321,9 +322,11 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
          </div>
  
          <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
 -          <Button disabled={applying} onClick={onBack} size="sm" variant="ghost">
 -            {copy.backToSetup}
 -          </Button>
-+          {onBack && (
++          {showBack && (
 +            <Button disabled={applying} onClick={onBack} size="sm" variant="ghost">
 +              {copy.backToSetup}
 +            </Button>

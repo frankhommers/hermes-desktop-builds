@@ -3,7 +3,7 @@
   "patches": [
     {
       "file": "remote-client-ui.patch",
-      "sha256": "f257e6f3e2a60da8ca93748f7f1611576a4969d6f330b57f0d98e5591e1a1bb6"
+      "sha256": "a4851338f1ae3af4cbc8e39f059c747772c5500ab1e5931d91b50702a30a459e"
     }
   ]
 }

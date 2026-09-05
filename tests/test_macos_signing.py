@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from common import load_pin, release_version
 from release import verify_distribution
 from macos_signing import validate_signing_receipt, require_resource_seal, is_missing_seal_rejection
+from source_patches import patch_set
 
 
 def valid_receipt():
@@ -30,11 +31,14 @@ def fixture(directory):
     archive.write_bytes(b'unit-test-only: not an installable archive')
     manifest = {
         'platform': 'darwin', 'arch': 'arm64', 'upstream': pin,
-        'version': release_version(pin), 'sourceClean': True, 'archiveRoundtrip': True,
+        'version': release_version(pin), 'sourceClean': False, 'sourceVerified': True, 'archiveRoundtrip': True,
+        'sourcePatch': {'schema': 1, 'verified': True, 'upstreamCommit': pin['commit'],
+                        'upstreamTree': '1' * 40, 'patchedTree': '2' * 40, **patch_set()},
         'archive': name, 'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
         'bytes': archive.stat().st_size, 'targetedSuite': {'releaseGatePassed': True},
         'nativeSmoke': {
             'platform': 'darwin', 'arch': 'arm64', 'firstRun': True, 'remoteForm': True,
+            'remoteSetupDirect': True, 'localInstallOfferAbsent': True,
             'unreachableRemoteBlocksApply': True, 'noAgentCheckout': True,
             'errors': [], 'localInstallStarted': False,
             'ptyResult': {'exitCode': 0, 'output': 'HERMES_NATIVE_PTY_OK'},
@@ -44,6 +48,26 @@ def fixture(directory):
 
 
 class MacReleaseRegressionTests(unittest.TestCase):
+    def test_publication_requires_verified_patch_and_remote_ui_receipts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            pin, valid = fixture(directory)
+            valid['macSigning'] = valid_receipt()
+            changes = [
+                lambda m: m.update(sourceClean=True),
+                lambda m: m.update(sourceVerified=1),
+                lambda m: m.pop('sourcePatch'),
+                lambda m: m['sourcePatch'].update(manifestSha256='0' * 64),
+                lambda m: m['nativeSmoke'].update(remoteSetupDirect=False),
+                lambda m: m['nativeSmoke'].update(localInstallOfferAbsent=1),
+            ]
+            for change in changes:
+                manifest = copy.deepcopy(valid)
+                change(manifest)
+                (directory / 'manifest.json').write_text(json.dumps(manifest))
+                with self.assertRaises(ValueError):
+                    verify_distribution(directory, pin, ('darwin', 'arm64'))
+
     def test_missing_seal_rejection_accepts_actual_macos_diagnostics_not_tool_failures(self):
         for diagnostic in (
             'code has no resources but signature indicates they must be present',
