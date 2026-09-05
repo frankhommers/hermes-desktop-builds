@@ -25,6 +25,7 @@ test('ad-hoc identity is explicit; retain upstream entitlements and hardened run
     assert.equal(options.preAutoEntitlements, false);
     assert.equal(options.preEmbedProvisioningProfile, false);
     assert.equal(options.strictVerify, true);
+    assert.equal(typeof options.ignore, 'function', 'Pinned osx-sign drops an ignore array');
     assert.equal(options.optionsForFile(app).hardenedRuntime, true);
     assert.equal(options.optionsForFile(app).timestamp, 'none');
     assert.match(options.optionsForFile(app).entitlements, /main\.plist$/);
@@ -35,7 +36,7 @@ test('ad-hoc identity is explicit; retain upstream entitlements and hardened run
 test('sign only Mach-O code/bundles, never ASAR data or already-hashed unpacked modules', () => {
   const {base, app, options} = fixture();
   try {
-    const ignore = options.ignore[0];
+    const ignore = options.ignore;
     const native = path.join(app, 'Contents/native');
     // This tiny magic header is a unit fixture, never part of a real application.
     fs.writeFileSync(native, Buffer.from('cffaedfe00000000', 'hex'));
