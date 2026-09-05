@@ -121,7 +121,12 @@ tests and typechecking run on every host. For the initial pinned commit, two pre
 named pre-existing failures may be reported as explicit exceptions: a native-button-title
 style violation, and an SSH control-socket path assertion under a long isolated HOME.
 The suite is **not called green** when either fails; raw JSON/logs and the exception
-classification are retained. Exceptions apply only to that exact commit.
+classification are retained. Windows also reports one explicit cross-Darwin fixture
+exception: a test expects POSIX mode 0755, but Windows exposes 0666. Actual Mac helper
+modes and native PTY execution are tested on Macs; no native feature is faked or removed.
+This exception is Windows-only. All exceptions apply only to that exact commit.
+Temporary Git test directories use GIT_CEILING_DIRECTORIES so they cannot accidentally
+discover or change the enclosing build repository.
 
 Binary architecture checks, ASAR file/integrity/secret-pattern scans, compiled-JS syntax,
 archive CRC/roundtrip checks and a real launch of the **extracted distribution** are gates.

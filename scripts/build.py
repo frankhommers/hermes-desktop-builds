@@ -67,7 +67,10 @@ def main():
     targeted=['electron/first-run-setup-main-process.test.ts','electron/first-run-setup-gate.test.ts',
               'electron/primary-backend-startup.test.ts','src/components/desktop-install-overlay.test.tsx',
               'scripts/stage-native-deps.test.mjs','scripts/before-pack.test.mjs']
-    cmd('targeted-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+targeted,desktop)
+    rc=cmd('targeted-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+targeted,desktop,True)
+    targeted_gate=gate_test_report(json.loads((logs/'targeted.json').read_text()),pin,rc,target)
+    (logs/'targeted-gate.json').write_text(json.dumps(targeted_gate,indent=2)+'\n')
+    print('TARGETED SUITE:',json.dumps(targeted_gate),flush=True)
     cmd('build',npm+['run','build'],desktop)
     builder=subprocess.check_output([node,'-p',"require.resolve('electron-builder/cli.js')"],cwd=desktop,env=env,text=True).strip()
     pack=WORK/'packed'
@@ -112,7 +115,7 @@ def main():
     manifest={'version':version,'upstream':pin,'platform':target,'arch':arch,'electron':pkg['build']['electronVersion'],
               'archive':archive.name,'sha256':digest(archive),'bytes':archive.stat().st_size,
               'sourceClean':True,'archiveRoundtrip':True,'nativeSmoke':json.loads((logs/'smoke.json').read_text()),
-              'fullSuite':gate,'signing':'No Developer ID/Authenticode signing or Apple notarization',
+              'fullSuite':gate,'targetedSuite':targeted_gate,'signing':'No Developer ID/Authenticode signing or Apple notarization',
               'limitations':['No real remote credentials/login/chat tested','No quarantined download/Gatekeeper or SmartScreen acceptance test','No microphone/camera/screen/TCC end-to-end test','Native full UI suite runs on Linux only']}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     (out/'SHA256SUMS').write_text(manifest['sha256']+'  '+archive.name+'\n')

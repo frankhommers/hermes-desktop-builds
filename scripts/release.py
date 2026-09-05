@@ -64,6 +64,7 @@ def verify_distribution(directory, pin, target):
     if manifest['archive']!=filename:raise ValueError('Unexpected archive name')
     archive=directory/filename
     if digest(archive)!=manifest['sha256'] or archive.stat().st_size!=manifest['bytes']:raise ValueError('Artifact hash/size mismatch')
+    if not manifest['targetedSuite']['releaseGatePassed']:raise ValueError('Targeted-suite gate missing')
     if platform=='linux' and not manifest['fullSuite']['releaseGatePassed']:raise ValueError('Full-suite gate missing')
     return manifest
 
@@ -111,7 +112,10 @@ Do not disable system security to install this build.
 Full upstream suite (Linux): {full['total']} total, {full['passed']} passed,
 {full['failed']} failed, {full['pending']} pending/skipped. Full suite green: {full['suiteGreen']}.
 Known exceptions, if any, remain listed in release-manifest.json and raw evidence ZIPs.
-Targeted startup/packaging tests and typechecking passed on each native host.
+Typechecking passed on each native host. Targeted startup/packaging test results are
+reported per target in release-manifest.json: Windows has one explicit POSIX-file-mode
+fixture exception (a Darwin test assumes chmod 0755 on Windows). No native feature
+is stubbed or removed; actual Mac modes and PTY execution are verified on Macs.
 
 On a clean first start choose **Connect to existing Hermes**. Do not choose the local
 installer. This is not a hard-locked remote-only fork: existing local runtimes can be

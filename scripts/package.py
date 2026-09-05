@@ -49,7 +49,7 @@ def native_inventory(app,platform,arch):
         native,arches=binary_arches(data)
         if native:
             # Win64 ConPTY may legitimately bundle x86 helper programs.
-            if native!=platform or (arch not in arches and not (platform=='win32' and arches=={'ia32'})):
+            if native!=platform or (arch not in arches and not (platform=='win32' and arches=={'ia32'} and p.suffix in ('.exe','.dll'))):
                 raise ValueError(f'Wrong native target {p}: {native}/{arches}, expected {platform}/{arch}')
             result.append({'path':p.relative_to(app).as_posix(),'platform':native,'arches':sorted(arches),'sha256':digest(p)})
         elif p.suffix in ('.node','.dll','.exe','.dylib','.so'):
