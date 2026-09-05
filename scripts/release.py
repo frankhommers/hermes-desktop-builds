@@ -22,9 +22,12 @@ def cask_text(version, assets):
         if asset['archive']!=filename or not re.fullmatch('[0-9a-f]{64}',asset['sha256']):raise ValueError('Bad cask asset')
         blocks.append(f'''  {condition} do
     sha256 "{asset['sha256']}"
+
     url "https://github.com/{REPO}/releases/download/v#{{version}}/Hermes-#{{version}}-darwin-{arch}-unsigned.zip"
   end''')
-    return f'''cask "hermes-desktop" do
+    return f'''# frozen_string_literal: true
+
+cask "hermes-desktop" do
   version "{version}"
 
 {chr(10).join(blocks)}
@@ -34,6 +37,7 @@ def cask_text(version, assets):
   homepage "https://github.com/{REPO}"
 
   depends_on macos: ">= :monterey"
+
   app "Hermes.app"
 
   caveats <<~EOS
