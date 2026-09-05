@@ -11,13 +11,18 @@ Tauri `Hermes-Setup` agent bootstrap installer. Not an official Nous Research re
 executables retain signatures, producing `code has no resources but signature indicates
 they must be present`. The earlier native-start/Brew checks did not detect this defect.
 
-[Release 0.17.0.2](https://github.com/frankhommers/hermes-desktop-builds/releases/tag/v0.17.0.2)
-is published, and the [tap](https://github.com/frankhommers/homebrew-tap/blob/main/casks/hermes-desktop.rb)
-now points to it. The [four-platform native build](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/33971898621)
-passed its distribution gates. Both Mac architectures passed final-bundle and extracted-ZIP
-signature checks, ASAR integrity, negative resource/seal tests, and real first-run/native-PTY
-smoke tests. The [actual Homebrew installations on macOS 15 Apple Silicon and Intel](https://github.com/frankhommers/homebrew-tap/actions/runs/33972967042)
-then passed deep/strict `codesign` verification before the cask was published.
+[Release 0.17.0.3](https://github.com/frankhommers/hermes-desktop-builds/releases/tag/v0.17.0.3)
+is the first automatically published release with the small remote-client UI patch.
+Its [four-platform native build](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/33984384497)
+passed the distribution gates, and the separate [automatic publication](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/33985138041)
+verified its artifacts before publishing. Both Mac architectures passed final-bundle and
+extracted-ZIP signature checks, ASAR integrity, negative resource/seal tests, and real
+direct-remote-first-run/native-PTY smoke tests. All targets built the same verified patched tree.
+
+For the current version, use [Latest release](https://github.com/frankhommers/hermes-desktop-builds/releases/latest)
+and the [tap](https://github.com/frankhommers/homebrew-tap/blob/main/casks/hermes-desktop.rb).
+The tap publishes an update only after actual Homebrew installation and deep/strict
+`codesign` verification on macOS 15 Apple Silicon and Intel.
 
 **Gatekeeper still rejects the quarantined ad-hoc publisher.** These are valid code seals,
 not Developer ID signing or Apple notarization. Raw per-target evidence and the existing
@@ -45,7 +50,7 @@ New patched builds open **Connect to existing Hermes** directly on a clean first
 They hide the local installation offer (including the alternate install-command screen),
 and omit the unused local gateway icons while the active gateway is remote. A genuine
 local failure is not hidden as an idle connection. The settings registry is unchanged.
-The currently published 0.17.0.2 predates this UI patch.
+The older 0.17.0.2 release predates this UI patch; patched releases start at 0.17.0.3.
 
 The remote form does not start the local installer. A running remote Hermes
 `serve`/dashboard backend is required; no local Node, Python or Hermes CLI is required.
