@@ -59,14 +59,6 @@ def main():
     # Full upstream suite on Linux; targeted unmodified safety/packaging tests on every host.
     gate=None
     reporter=['--reporter='+str(ROOT/'scripts/completion-reporter.mjs')]
-    if target=='linux':
-        report=logs/'vitest.json'
-        env['DESKTOP_TEST_RECEIPT']=str(logs/'full-completion.json')
-        rc=cmd('upstream-full-tests',npm+['test','--','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)]+reporter,desktop,True)
-        data=json.loads(report.read_text());data['runCompletion']=json.loads((logs/'full-completion.json').read_text())
-        gate=gate_test_report(data,pin,rc)
-        (logs/'test-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
-        print('FULL SUITE (exceptions are explicit):',json.dumps(gate),flush=True)
     targeted=['electron/first-run-setup-main-process.test.ts','electron/first-run-setup-gate.test.ts',
               'electron/primary-backend-startup.test.ts','src/components/desktop-install-overlay.test.tsx',
               'scripts/stage-native-deps.test.mjs','scripts/before-pack.test.mjs']
@@ -117,7 +109,24 @@ def main():
     smoke_env=clean_environment(WORK/'smoke',pin)
     smoke_env.pop('GITHUB_SHA',None);smoke_env.pop('GITHUB_REF_NAME',None)
     command=[node,str(ROOT/'scripts/smoke.mjs'),str(src),str(binary),str(WORK/'smoke/h'),str(logs)]
-    run('native-smoke',command,ROOT,smoke_env,logs)
+    if target=='linux' and shutil.which('strace'):
+        command=[shutil.which('strace'),'-f','-e','trace=process,network','-s','200','-o',str(logs/'native-strace.log')]+command
+    try:
+        run('native-smoke',command,ROOT,smoke_env,logs)
+    finally:
+        runtime_logs=WORK/'smoke/h/.hermes/logs'
+        for name in ('desktop.log','gui.log'):
+            p=runtime_logs/name
+            if p.is_file():shutil.copyfile(p,logs/('runtime-'+name))
+    if target=='linux':
+        report=logs/'vitest.json'
+        env['DESKTOP_TEST_RECEIPT']=str(logs/'full-completion.json')
+        rc=cmd('upstream-full-tests',npm+['test','--','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)]+reporter,desktop,True)
+        data=json.loads(report.read_text());data['runCompletion']=json.loads((logs/'full-completion.json').read_text())
+        gate=gate_test_report(data,pin,rc)
+        (logs/'test-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
+        print('FULL SUITE (exceptions are explicit):',json.dumps(gate),flush=True)
+    env.pop('DESKTOP_TEST_RECEIPT',None)
     status=subprocess.check_output([git,'status','--porcelain','--untracked-files=no'],cwd=src,env=env,text=True)
     if status:raise RuntimeError('Tracked upstream files changed: '+status)
     manifest={'version':version,'upstream':pin,'platform':target,'arch':arch,'electron':pkg['build']['electronVersion'],
