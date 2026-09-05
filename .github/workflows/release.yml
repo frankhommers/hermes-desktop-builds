@@ -1,0 +1,70 @@
+name: Publish verified release
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: 'Successful main-branch native build run ID (all four targets)'
+        type: string
+        required: true
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-hermes-desktop
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests -v
+      - name: Validate the native CI receipt and fetch its verified artifacts
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.build_run }}
+        run: |
+          import json, os, pathlib, re, subprocess
+          repo='frankhommers/hermes-desktop-builds'
+          run=os.environ['BUILD_RUN']
+          assert re.fullmatch('[1-9][0-9]*',run), 'Exact numeric run ID required'
+          receipt=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
+          assert receipt['repository']['full_name']==repo
+          assert receipt['head_repository']['full_name']==repo
+          assert receipt['head_branch']=='main' and receipt['event']=='workflow_dispatch'
+          assert receipt['path']=='.github/workflows/build.yml'
+          assert receipt['status']=='completed' and receipt['conclusion']=='success'
+          subprocess.run(['git','merge-base','--is-ancestor',receipt['head_sha'],'HEAD'],check=True)
+          pathlib.Path('out').mkdir(exist_ok=True)
+          pathlib.Path('out/build-receipt.json').write_text(json.dumps(receipt,indent=2))
+          subprocess.run(['gh','run','download',run,'--repo',repo,'--pattern','desktop-*','--dir','out/downloads'],check=True)
+          subprocess.run(['python3','scripts/release.py','--downloads','out/downloads','--destination','out/release','--run-url',receipt['html_url']],check=True)
+      - name: Create draft, verify exact assets, then publish immutable preview
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, pathlib, subprocess
+          repo='frankhommers/hermes-desktop-builds'
+          directory=pathlib.Path('out/release')
+          manifest=json.loads((directory/'release-manifest.json').read_text())
+          receipt=json.loads(pathlib.Path('out/build-receipt.json').read_text())
+          tag='v'+manifest['version']
+          existing=subprocess.run(['gh','release','view',tag,'--repo',repo],capture_output=True)
+          assert existing.returncode!=0, 'Refusing to overwrite an existing release'
+          assets=sorted(p for p in directory.iterdir() if p.name!='RELEASE-NOTES.md')
+          subprocess.run(['gh','release','create',tag,*map(str,assets),'--repo',repo,'--target',receipt['head_sha'],'--title',f'Hermes Desktop {manifest["version"]} — community preview','--notes-file',str(directory/'RELEASE-NOTES.md'),'--draft','--prerelease','--latest=false'],check=True)
+          remote=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          assert remote['draft'] and remote['prerelease']
+          assert {a['name']:a['size'] for a in remote['assets']}=={p.name:p.stat().st_size for p in assets}
+          byname={a['name']:a for a in remote['assets']}
+          for m in manifest['targets'].values():
+              assert byname[m['archive']]['digest']=='sha256:'+m['sha256']
+          subprocess.run(['gh','release','edit',tag,'--repo',repo,'--draft=false','--prerelease','--latest=false'],check=True)
+          final=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          assert not final['draft'] and final['prerelease']
+          print('Verified public release:',final['html_url'])

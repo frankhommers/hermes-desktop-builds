@@ -142,6 +142,16 @@ alongside the pin if needed. Re-run all targets before publishing. Build version
 the revision: upstream `0.17.0`, revision `1` becomes distribution `0.17.0.1`.
 No automatic tracking of unreviewed upstream `main`; no in-app update feed is configured.
 
+After the build succeeds, run **Actions → Publish verified release**, supplying the
+numeric build run ID. This verifies the successful main-branch run, all four manifests
+and local checksums, creates a draft, checks uploaded asset sizes and GitHub SHA256
+digests, and only then publishes the preview. A failed publication remains a draft,
+never a partial public release. Existing versions/assets are never overwritten.
+
+The Homebrew tap has a separate daily/manual sync: generate the cask from that public
+release manifest, audit/fetch/install it on Apple Silicon and Intel, then commit only
+the tested cask. No cross-repository PAT or Apple credential is required.
+
 Publication and tap synchronization are separate from the untrusted dependency/build
 process. Never overwrite an existing release asset/version. Keep the full build run URL
 and pin in the release manifest. The tap must reference immutable URLs and SHA256 values,
