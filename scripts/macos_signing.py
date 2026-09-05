@@ -10,6 +10,16 @@ from package import native_inventory
 REQUIRED_FLAGS = ('bundleVerified', 'archiveVerified', 'tamperRejected', 'missingSealRejected')
 
 
+def is_missing_seal_rejection(returncode, output):
+    # Apple uses a different diagnostic after deleting a newly created resource seal
+    # than for the inherited/stale Electron signature in the original broken ZIP.
+    diagnostics = (
+        'code has no resources but signature indicates they must be present',
+        'invalid resource directory (directory or signature have been modified)',
+    )
+    return returncode == 1 and any(message in output for message in diagnostics)
+
+
 def validate_signing_receipt(receipt):
     def fail():
         raise ValueError('Mac signing verification evidence missing or invalid')
@@ -88,7 +98,7 @@ def verify_extracted(bundle, arch, staged_count, cmd, logs):
         resource.write_bytes(original + b'\nMAC_SIGNING_NEGATIVE_TEST\n')
         rc = cmd('mac-tamper-rejected', ['/usr/bin/codesign', '--verify', '--deep', '--strict',
                                        '--verbose=2', str(bundle)], allow_failure=True)
-        if rc == 0:
+        if rc != 1 or 'a sealed resource is missing or invalid' not in (logs / 'mac-tamper-rejected.log').read_text():
             raise ValueError('Mac signature failed to detect modified resource')
     finally:
         resource.write_bytes(original)
@@ -100,10 +110,8 @@ def verify_extracted(bundle, arch, staged_count, cmd, logs):
         seal.unlink()
         rc = cmd('mac-missing-seal-rejected', ['/usr/bin/codesign', '--verify', '--deep', '--strict',
                                              '--verbose=2', str(bundle)], allow_failure=True)
-        if rc == 0:
-            raise ValueError('Mac signature failed to detect missing CodeResources')
-        if 'code has no resources but signature indicates they must be present' not in (logs / 'mac-missing-seal-rejected.log').read_text():
-            raise ValueError('Missing resource seal did not reproduce the original regression')
+        if not is_missing_seal_rejection(rc, (logs / 'mac-missing-seal-rejected.log').read_text()):
+            raise ValueError('Mac signature failed to reject the missing resource seal')
     finally:
         seal.write_bytes(original)
     verify_bundle(bundle, arch, cmd, 'mac-seal-restored')

@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from common import load_pin, release_version
 from release import verify_distribution
-from macos_signing import validate_signing_receipt, require_resource_seal
+from macos_signing import validate_signing_receipt, require_resource_seal, is_missing_seal_rejection
 
 
 def valid_receipt():
@@ -44,6 +44,17 @@ def fixture(directory):
 
 
 class MacReleaseRegressionTests(unittest.TestCase):
+    def test_missing_seal_rejection_accepts_actual_macos_diagnostics_not_tool_failures(self):
+        for diagnostic in (
+            'code has no resources but signature indicates they must be present',
+            'invalid resource directory (directory or signature have been modified)',
+        ):
+            self.assertTrue(is_missing_seal_rejection(1, 'Hermes.app: ' + diagnostic))
+            for wrong_exit in (0, 2, 3, 127, -9):
+                self.assertFalse(is_missing_seal_rejection(wrong_exit, diagnostic))
+        for other in ('codesign: command not found', 'No such file or directory', 'valid on disk', ''):
+            self.assertFalse(is_missing_seal_rejection(1, other))
+
     def test_valid_receipt_is_explicitly_not_gatekeeper_acceptance(self):
         receipt = validate_signing_receipt(valid_receipt())
         self.assertFalse(receipt['gatekeeper']['accepted'])
