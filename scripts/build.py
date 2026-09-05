@@ -9,6 +9,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from common import ROOT, WORK, OUT, load_pin, release_version, clean_environment, run, gate_test_report
 from package import digest, native_inventory, inventory, make_archive, unpack_archive
@@ -108,9 +109,15 @@ def main():
     binary=extracted/bundle.name/('Contents/MacOS/Hermes' if target=='darwin' else 'Hermes.exe' if target=='win32' else 'Hermes')
     smoke_env=clean_environment(WORK/'smoke',pin)
     smoke_env.pop('GITHUB_SHA',None);smoke_env.pop('GITHUB_REF_NAME',None)
+    if target=='linux' and os.environ.get('GITHUB_ACTIONS')=='true':
+        # Chromium's singleton Unix socket must fit sun_path (108 bytes).
+        # GitHub's doubled repo checkout path can exceed it even in a fresh home.
+        short_tmp=tempfile.mkdtemp(prefix='hs-',dir=os.environ['RUNNER_TEMP'])
+        smoke_env.update({name:short_tmp for name in ('TMPDIR','TMP','TEMP')})
+        print('Private short Linux smoke temp:',short_tmp,flush=True)
     command=[node,str(ROOT/'scripts/smoke.mjs'),str(src),str(binary),str(WORK/'smoke/h'),str(logs)]
     if target=='linux' and shutil.which('strace'):
-        command=[shutil.which('strace'),'-f','-e','trace=process,network','-s','200','-o',str(logs/'native-strace.log')]+command
+        command=[shutil.which('strace'),'-f','-e','trace=process,network,%file','-s','200','-o',str(logs/'native-strace.log')]+command
     try:
         run('native-smoke',command,ROOT,smoke_env,logs)
     finally:

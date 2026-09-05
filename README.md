@@ -11,6 +11,8 @@ and Linux x64. Each build packages Electron, the real UI and real native modules
 No Python runtime, agent checkout, venv, credentials or personal backend URL is bundled.
 No global installs, signing credentials, sudo or system configuration changes are used.
 All caches, source and test homes live in `.work/`; outputs live in `out/`.
+Linux CI uses one private short directory under `RUNNER_TEMP` for Chromium socket
+files, because its Unix-domain socket paths cannot exceed the kernel length limit.
 
 **These are unsigned community previews**, not notarized/Developer-ID or Authenticode
 releases. A native CI starttest does not prove Gatekeeper/SmartScreen acceptance of
