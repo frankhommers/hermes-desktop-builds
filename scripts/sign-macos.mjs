@@ -22,7 +22,8 @@ export function signingOptions(source, app) {
         hardenedRuntime: true, timestamp: 'none',
       };
     },
-    ignore: [(file) => {
+    // osx-sign 1.3.3 drops array-valued ignore during normalization; use a function.
+    ignore(file) {
       // Already signed before ASAR hashing; signing again would stale its integrity header.
       if (file.startsWith(unpacked)) return true;
       // Do not sign aliases twice, or create xattr signatures on PNG/PAK/ASAR data.
@@ -35,7 +36,7 @@ export function signingOptions(source, app) {
         const magic = Buffer.alloc(4);
         return fs.readSync(fd, magic, 0, 4, 0) !== 4 || !machoMagics.has(magic.toString('hex'));
       } finally { fs.closeSync(fd); }
-    }],
+    },
   };
 }
 
