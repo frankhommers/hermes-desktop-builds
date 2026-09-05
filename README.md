@@ -4,19 +4,17 @@ Community builds of the **real, unmodified Nous Research Hermes Electron Desktop
 This is a build/distribution repository, not a Hermes fork, website wrapper, or the
 Tauri `Hermes-Setup` agent bootstrap installer. Not an official Nous Research release.
 
-## Verified preview
+## Distribution status
 
-[Download 0.17.0.1](https://github.com/frankhommers/hermes-desktop-builds/releases/tag/v0.17.0.1)
-— macOS arm64/x64 ZIPs, Windows x64 ZIP and Linux x64 tar.gz.
+**Do not use the 0.17.0.1 Mac ZIPs.** They lack CodeResources seals while the Electron
+executables retain signatures, producing `code has no resources but signature indicates
+they must be present`. The earlier native-start/Brew checks did not detect this defect.
 
-All four extracted distributions passed native first-run/remote-form/PTY smoke tests
-([build evidence](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/33967548228)).
-The Mac cask passed audit, checksum download and actual installation on both Mac architectures
-([Homebrew evidence](https://github.com/frankhommers/homebrew-tap/actions/runs/33968443086)).
-These are **CI checks**, not a successful remote login or Gatekeeper/SmartScreen clearance.
-The initial full Linux suite reports 9,334 passed, 2 known failures and 6 skipped;
-the Windows targeted suite reports 70 passed and the documented POSIX-mode exception.
-Raw results and exception reasons accompany the release; no failing suite is labelled green.
+Build revision 0.17.0.2 adds native signing, extracted-ZIP signature checks and negative
+tests. It is installable only once it appears in [Releases](https://github.com/frankhommers/hermes-desktop-builds/releases)
+with all four native build receipts and the tested cask has reached the tap.
+No release is implied by a commit or a configured workflow. Per-target evidence and
+upstream test exceptions accompany actual releases; no failing suite is labelled green.
 
 ## Scope
 
@@ -28,9 +26,11 @@ All caches, source and test homes live in `.work/`; outputs live in `out/`.
 Linux CI uses one private short directory under `RUNNER_TEMP` for Chromium socket
 files, because its Unix-domain socket paths cannot exceed the kernel length limit.
 
-**These are unsigned community previews**, not notarized/Developer-ID or Authenticode
-releases. A native CI starttest does not prove Gatekeeper/SmartScreen acceptance of
-a downloaded application. Do not disable OS security or strip quarantine automatically.
+**Mac previews are ad-hoc signed, not Apple Developer ID signed or notarized.** Windows
+previews have no Authenticode signature. A valid Mac signature seals the app contents;
+it does not establish an Apple-trusted publisher. Native CI separately records the
+Gatekeeper rejection of the quarantined ad-hoc app and never calls that acceptance.
+Do not disable OS security or strip quarantine automatically.
 
 ## Remote use: important
 
@@ -57,7 +57,8 @@ Checksums, source pin and per-platform validation evidence accompany each releas
 
 ### macOS
 
-The release ZIP contains a complete `Hermes.app`. Use the archive for your CPU.
+The `darwin-<arch>-adhoc.zip` release ZIP contains a complete, ad-hoc signed `Hermes.app`.
+Use the archive for your CPU. Signing happens during the build, never in cask hooks.
 macOS 12+ is the initial binary metadata floor, not a tested compatibility matrix.
 
 Install via the verified cask in [frankhommers/tap](https://github.com/frankhommers/homebrew-tap):
@@ -88,11 +89,16 @@ trust this build. Never disable Gatekeeper/SIP or broadly remove quarantine.
 For “damaged”, `Killed: 9`, a crash or no app-specific exception: stop and diagnose:
 
 ```sh
-codesign --verify --deep --strict --verbose=2 "$HOME/Applications/Hermes.app"
-spctl --assess --type execute -vv "$HOME/Applications/Hermes.app"
+# Use the actual installation path: Brew normally uses /Applications.
+APP="/Applications/Hermes.app"
+codesign --verify --deep --strict --verbose=2 "$APP"
+spctl --assess --type execute -vv "$APP"
 ```
 
-These checks may legitimately reject an unsigned app. CI does not certify that result.
+The `codesign` check MUST pass for the corrected Mac release. `spctl` still rejects
+the unnotarized ad-hoc publisher; that is distinct from a damaged bundle. No local
+re-signing is necessary. A fully Apple-trusted distribution requires Developer ID
+signing and notarization credentials in a separate credentialed release lane.
 
 ### Windows
 
@@ -151,9 +157,19 @@ discover or change the enclosing build repository.
 
 Binary architecture checks, ASAR file/integrity/secret-pattern scans, compiled-JS syntax,
 archive CRC/roundtrip checks and a real launch of the **extracted distribution** are gates.
+On Mac, the original upstream beforePack hook still runs. A wrapper then ad-hoc signs
+its final staged native files BEFORE electron-builder hashes them into ASAR. After all
+license resources are copied, the pinned `@electron/osx-sign` signs the app inside-out,
+using upstream entitlements and hardened runtime, without touching the already-hashed
+native payload. Only Mach-O code/bundles are signed; data-file xattr signatures are avoided.
+The final bundle and extracted ZIP must pass deep/strict codesign plus explicit unpacked
+native-module verification. Deliberately tampered resources and a missing CodeResources
+seal must be rejected, and restoring them must recover a byte/mode-identical valid bundle.
+Only afterwards is quarantine added to the extracted CI copy for an honest Gatekeeper
+assessment. No quarantine removal, security-policy change or local post-install repair.
 Pattern scanning is not a universal secrets/malware guarantee. No live credentials are read.
 Native Mac/Windows GUI/GPU/peripheral integration, microphone/screen/camera permissions,
-Keychain and quarantined download acceptance still need user-machine testing.
+Keychain and Finder/app-specific Open Anyway still need user-machine testing.
 
 ## CI, releases and updates
 

@@ -7,7 +7,7 @@ from release import cask_text, prepare
 
 class ReleaseTests(unittest.TestCase):
     def test_cask_selects_arch_and_never_runs_installers(self):
-        assets={f'darwin-{a}':{'archive':f'Hermes-0.17.0.1-darwin-{a}-unsigned.zip','sha256':str(i)*64} for i,a in enumerate(('arm64','x64'),1)}
+        assets={f'darwin-{a}':{'archive':f'Hermes-0.17.0.1-darwin-{a}-adhoc.zip','sha256':str(i)*64} for i,a in enumerate(('arm64','x64'),1)}
         text=cask_text('0.17.0.1',assets)
         self.assertIn('on_arm do',text);self.assertIn('on_intel do',text)
         self.assertIn('app "Hermes.app"',text)

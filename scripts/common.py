@@ -34,6 +34,12 @@ def release_version(pin):
     return f"{pin['version']}.{pin['revision']}"
 
 
+def archive_name(version, platform, arch):
+    suffix = '.tar.gz' if platform == 'linux' else '.zip'
+    signing = 'adhoc' if platform == 'darwin' else 'unsigned'
+    return f'Hermes-{version}-{platform}-{arch}-{signing}{suffix}'
+
+
 def clean_environment(work, pin, inherited=None):
     source = os.environ if inherited is None else inherited
     # Toolchain/OS plumbing only. No GitHub tokens, cloud keys, Python env or agent settings.
