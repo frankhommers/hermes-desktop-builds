@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "patches": [
+    {
+      "file": "remote-client-ui.patch",
+      "sha256": "f257e6f3e2a60da8ca93748f7f1611576a4969d6f330b57f0d98e5591e1a1bb6"
+    }
+  ]
+}
