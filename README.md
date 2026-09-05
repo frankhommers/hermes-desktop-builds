@@ -10,11 +10,17 @@ Tauri `Hermes-Setup` agent bootstrap installer. Not an official Nous Research re
 executables retain signatures, producing `code has no resources but signature indicates
 they must be present`. The earlier native-start/Brew checks did not detect this defect.
 
-Build revision 0.17.0.2 adds native signing, extracted-ZIP signature checks and negative
-tests. It is installable only once it appears in [Releases](https://github.com/frankhommers/hermes-desktop-builds/releases)
-with all four native build receipts and the tested cask has reached the tap.
-No release is implied by a commit or a configured workflow. Per-target evidence and
-upstream test exceptions accompany actual releases; no failing suite is labelled green.
+[Preview 0.17.0.2](https://github.com/frankhommers/hermes-desktop-builds/releases/tag/v0.17.0.2)
+is published, and the [tap](https://github.com/frankhommers/homebrew-tap/blob/main/casks/hermes-desktop.rb)
+now points to it. The [four-platform native build](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/33971898621)
+passed its distribution gates. Both Mac architectures passed final-bundle and extracted-ZIP
+signature checks, ASAR integrity, negative resource/seal tests, and real first-run/native-PTY
+smoke tests. The [actual Homebrew installations on macOS 15 Apple Silicon and Intel](https://github.com/frankhommers/homebrew-tap/actions/runs/33972967042)
+then passed deep/strict `codesign` verification before the cask was published.
+
+**Gatekeeper still rejects the quarantined ad-hoc publisher.** These are valid code seals,
+not Developer ID signing or Apple notarization. Raw per-target evidence and the existing
+Linux/Windows upstream test exceptions accompany the release; no failing suite is labelled green.
 
 ## Scope
 
