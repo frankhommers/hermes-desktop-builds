@@ -6,11 +6,11 @@ Tauri `Hermes-Setup` agent bootstrap installer. Not an official Nous Research re
 
 ## Distribution status
 
-**Do not use the 0.17.0.1 Mac ZIPs.** They lack CodeResources seals while the Electron
+**Release and tag 0.17.0.1 have been withdrawn. Do not use its Mac ZIPs.** They lack CodeResources seals while the Electron
 executables retain signatures, producing `code has no resources but signature indicates
 they must be present`. The earlier native-start/Brew checks did not detect this defect.
 
-[Preview 0.17.0.2](https://github.com/frankhommers/hermes-desktop-builds/releases/tag/v0.17.0.2)
+[Release 0.17.0.2](https://github.com/frankhommers/hermes-desktop-builds/releases/tag/v0.17.0.2)
 is published, and the [tap](https://github.com/frankhommers/homebrew-tap/blob/main/casks/hermes-desktop.rb)
 now points to it. The [four-platform native build](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/33971898621)
 passed its distribution gates. Both Mac architectures passed final-bundle and extracted-ZIP
@@ -32,8 +32,8 @@ All caches, source and test homes live in `.work/`; outputs live in `out/`.
 Linux CI uses one private short directory under `RUNNER_TEMP` for Chromium socket
 files, because its Unix-domain socket paths cannot exceed the kernel length limit.
 
-**Mac previews are ad-hoc signed, not Apple Developer ID signed or notarized.** Windows
-previews have no Authenticode signature. A valid Mac signature seals the app contents;
+**Mac builds are ad-hoc signed, not Apple Developer ID signed or notarized.** Windows
+builds have no Authenticode signature. A valid Mac signature seals the app contents;
 it does not establish an Apple-trusted publisher. Native CI separately records the
 Gatekeeper rejection of the quarantined ad-hoc app and never calls that acceptance.
 Do not disable OS security or strip quarantine automatically.
@@ -193,8 +193,11 @@ No automatic tracking of unreviewed upstream `main`; no in-app update feed is co
 After the build succeeds, run **Actions → Publish verified release**, supplying the
 numeric build run ID. This verifies the successful main-branch run, all four manifests
 and local checksums, creates a draft, checks uploaded asset sizes and GitHub SHA256
-digests, and only then publishes the preview. A failed publication remains a draft,
-never a partial public release. Existing versions/assets are never overwritten.
+digests, and only then publishes a normal release with its version number as the title
+and explicitly marks it Latest. This controls GitHub presentation, not Apple/Windows
+publisher trust or an assertion that all upstream tests pass. A failed pre-publication
+validation remains a draft, never a partial public release. Existing versions/assets
+are never overwritten.
 
 The Homebrew tap has a separate daily/manual sync: generate the cask from that public
 release manifest, audit/fetch/install it on Apple Silicon and Intel, then commit only

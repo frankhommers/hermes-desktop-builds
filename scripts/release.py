@@ -99,7 +99,7 @@ def prepare(downloads,destination,run_url):
     (destination/'SHA256SUMS').write_text('\n'.join(checks)+'\n')
     (destination/'hermes-desktop.rb').write_text(cask_text(version,manifests))
     full=manifests['linux-x64']['fullSuite']
-    notes=f'''# Hermes Desktop {version} — community preview
+    notes=f'''# Hermes Desktop {version} — community build
 
 Real, unmodified upstream Electron Desktop, not the local-agent bootstrap installer.
 Source: https://github.com/{pin['repository']}/commit/{pin['commit']}
