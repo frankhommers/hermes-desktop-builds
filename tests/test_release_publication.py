@@ -3,16 +3,18 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
 
 
 class PublicationTests(unittest.TestCase):
-    def exercise(self, existing_public=False):
+    def exercise(self, existing_public=False, corrupt_metadata=False):
         # Execute the actual YAML step with GH subprocesses intercepted only in this unit test.
         workflow = (ROOT / '.github/workflows/release.yml').read_text()
         tail = workflow.split('      - name: Create draft, verify exact assets, then publish', 1)[1]
@@ -34,13 +36,15 @@ class PublicationTests(unittest.TestCase):
             (directory / 'RELEASE-NOTES.md').write_text('Unit fixture; no actual application.\n')
             (work / 'out/build-receipt.json').write_text(json.dumps({'head_sha': 'a' * 40}))
             remote = {
-                'draft': True, 'prerelease': False, 'tag_name': 'v1.2.3.4',
+                'id': 123, 'draft': True, 'prerelease': False, 'tag_name': 'v1.2.3.4',
                 'target_commitish': 'a' * 40, 'body': 'Unit fixture; no actual application.\n',
                 'html_url': f'https://github.com/{repo}/releases/tag/v1.2.3.4',
                 'assets': [{'name': p.name, 'size': p.stat().st_size,
                             'digest': 'sha256:' + hashlib.sha256(p.read_bytes()).hexdigest()}
                            for p in directory.iterdir() if p.name != 'RELEASE-NOTES.md'],
             }
+            if corrupt_metadata:
+                next(asset for asset in remote['assets'] if asset['name'] == 'release-manifest.json')['digest'] = 'sha256:' + '0' * 64
             if existing_public:
                 self.remote = dict(remote, draft=False)
 
@@ -72,6 +76,12 @@ class PublicationTests(unittest.TestCase):
                     return json.dumps({'apiUrl': endpoint}).encode()
                 if args == ['gh', 'api', endpoint]:
                     return json.dumps(self.remote).encode()
+                if args == ['gh', 'api', f'repos/{repo}/releases/latest']:
+                    assert self.remote is not None
+                    assert self.remote['latest'] is True and self.remote['draft'] is False
+                    return json.dumps(self.remote).encode()
+                if args == ['gh', 'api', f'repos/{repo}/releases?per_page=100', '--paginate', '--slurp']:
+                    return json.dumps([[]]).encode()
                 raise AssertionError('Unexpected unit-test read: ' + repr(args))
 
             import os
@@ -95,6 +105,13 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'Never overwrite a published release'):
             self.exercise(existing_public=True)
         self.assertFalse(any(c[:3] in (['gh', 'release', 'create'], ['gh', 'release', 'edit']) for c in self.calls))
+
+    def test_uploaded_metadata_digest_failure_keeps_release_draft(self):
+        with self.assertRaises(AssertionError):
+            self.exercise(corrupt_metadata=True)
+        assert self.remote is not None
+        self.assertIs(self.remote['draft'], True)
+        self.assertFalse(any(c[:3] == ['gh', 'release', 'edit'] for c in self.calls))
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 # Hermes Desktop Builds
 
-Community builds of the **real, unmodified Nous Research Hermes Electron Desktop**.
+Community builds of the **real Nous Research Hermes Electron Desktop**, with a small,
+explicit UI patch applied before building and signing.
 This is a build/distribution repository, not a Hermes fork, website wrapper, or the
 Tauri `Hermes-Setup` agent bootstrap installer. Not an official Nous Research release.
 
@@ -40,11 +41,17 @@ Do not disable OS security or strip quarantine automatically.
 
 ## Remote use: important
 
-On a clean first start choose **Connect to existing Hermes**, NOT **Install Hermes locally**.
+New patched builds open **Connect to existing Hermes** directly on a clean first start.
+They hide the local installation offer (including the alternate install-command screen),
+and omit the unused local gateway icons while the active gateway is remote. A genuine
+local failure is not hidden as an idle connection. The settings registry is unchanged.
+The currently published 0.17.0.2 predates this UI patch.
+
 The remote form does not start the local installer. A running remote Hermes
 `serve`/dashboard backend is required; no local Node, Python or Hermes CLI is required.
 
-This is **not a hard-locked remote-only fork**: the upstream local-install button remains.
+This is **not a hard-locked remote-only fork**: local runtime internals remain intact;
+the patch changes presentation, not the backend's installation/discovery capabilities.
 If Hermes is already installed locally, upstream discovery may start that existing runtime
 before first-run setup. Review your existing client/runtime configuration first; do not
 blindly launch on such a machine when local agent startup must be avoided. Runtime
@@ -145,7 +152,8 @@ python3 scripts/build.py --run
 ```
 
 The build fetches the exact public upstream commit and checks it out without CRLF
-conversion, runs lockfile npm ci with lifecycle scripts initially disabled, explicitly
+conversion, verifies and applies the checked-in UI/test patch, then runs lockfile npm ci
+with lifecycle scripts initially disabled, explicitly
 installs Electron, then uses upstream build/staging/builder hooks. Native dependencies
 are never replaced by stubs. Unknown test failures block the distribution.
 
@@ -184,20 +192,38 @@ runners are used, never paid larger runners. Builds have only `contents: read` a
 no signing/API secrets. Artifacts expire after 7 days; Releases are the durable downloads.
 Actions are pinned by commit. PRs run tooling tests, not credentialed publish operations.
 
-Update `upstream.json` deliberately (commit + matching upstream version; increment build
-revision for another build of the same app version). Update the workflow Node version
-alongside the pin if needed. Re-run all targets before publishing. Build versions append
-the revision: upstream `0.17.0`, revision `1` becomes distribution `0.17.0.1`.
-No automatic tracking of unreviewed upstream `main`; no in-app update feed is configured.
+The daily **Update official Hermes release** workflow follows published, non-prerelease
+official releases of `NousResearch/hermes-agent`, not its moving `main` branch. It resolves
+the tag to an exact commit, checks ancestry to prevent source downgrades, reads the Desktop
+version at that commit, and updates only `upstream.json`. A write race stops the update.
+An explicit dispatch then starts the native build at the expected build-repository commit.
 
-After the build succeeds, run **Actions → Publish verified release**, supplying the
-numeric build run ID. This verifies the successful main-branch run, all four manifests
+The current source pin is newer than the latest official release available when this
+automation was introduced. That older release is skipped, not installed as a downgrade.
+Node/toolchain changes and patch conflicts still require a maintainer; the workflow never
+auto-edits a patch, invents test exceptions, or blindly updates dependencies to make CI pass.
+Build revisions are monotonic: upstream Desktop `0.17.0`, revision `3` becomes `0.17.0.3`.
+The existing exact-commit test exceptions do not carry forward to another upstream commit.
+No in-app update feed is configured.
+
+After a main-branch build succeeds, **Publish verified release** starts automatically via
+`workflow_run`. Manual dispatch with the numeric run ID remains available for recovery.
+The privilege boundary rejects forks, PR runs, other workflows, incomplete/failed runs,
+missing native lanes and commits outside main history before trusting artifacts. It uses
+the exact build revision's pin, patch set and validators, even if main advanced meanwhile.
+This verifies the successful main-branch run, all four manifests
 and local checksums, creates a draft, checks uploaded asset sizes and GitHub SHA256
 digests, and only then publishes a normal release with its version number as the title
 and explicitly marks it Latest. This controls GitHub presentation, not Apple/Windows
 publisher trust or an assertion that all upstream tests pass. A failed pre-publication
 validation remains a draft, never a partial public release. Existing versions/assets
-are never overwritten.
+are never overwritten. A delayed older build cannot become Latest over a newer version.
+
+Patch hashes and the resulting source state are verified; patched sources are not described
+as unmodified. The first-run UI is checked on each real native packaged application. Patch
+conflicts, changed behavior, unknown test failures or invalid signatures fail closed: the
+last published release and existing tap remain available. Review failed Actions runs;
+GitHub failure notifications depend on the repository/user notification settings.
 
 The Homebrew tap has a separate daily/manual sync: generate the cask from that public
 release manifest, audit/fetch/install it on Apple Silicon and Intel, then commit only

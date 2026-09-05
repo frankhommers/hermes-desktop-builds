@@ -20,15 +20,17 @@ try {
   app=await _electron.launch({executablePath:binary,args,env,timeout:90000});
   const page=await app.firstWindow({timeout:90000});
   page.on('pageerror',err=>errors.push(String(err)));
-  await page.getByText('Connect to existing Hermes',{exact:true}).waitFor({timeout:90000});
+  await page.getByRole('heading',{name:'Connect to existing Hermes',exact:true}).waitFor({timeout:90000});
+  await page.getByPlaceholder('https://gateway.example.com/hermes').waitFor();
+  assert.equal(await page.getByText('Install Hermes locally',{exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Back',exact:true}).count(),0);
   fs.writeFileSync(path.join(logs,'first-run.txt'),await page.locator('body').innerText());
   const paths=await app.evaluate(({app})=>({packaged:app.isPackaged,path:app.getAppPath(),home:app.getPath('home'),userData:app.getPath('userData'),hermesHome:process.env.HERMES_HOME,platform:process.platform,arch:process.arch,versions:process.versions}));
   assert.equal(paths.packaged,true);
   assert.equal(paths.platform,process.platform);
   assert.equal(paths.arch,process.arch);
   assert.equal(paths.hermesHome,path.join(home,'.hermes'));
-  await page.getByText('Connect to existing Hermes',{exact:true}).click();
-  await page.getByPlaceholder('https://gateway.example.com/hermes').waitFor();
+
   fs.writeFileSync(path.join(logs,'remote-form.txt'),await page.locator('body').innerText());
   const bootstrap=await page.evaluate(()=>window.hermesDesktop.getBootstrapState());
   assert.equal(bootstrap.active,false);
@@ -68,7 +70,7 @@ try {
   assert.equal(after.active,false);assert.deepEqual(after.stages,{});
   assert(!fs.existsSync(path.join(home,'.hermes/hermes-agent')),'No local agent checkout');
   assert.equal(errors.length,0,JSON.stringify(errors));
-  const result={platform:process.platform,arch:process.arch,paths,firstRun:true,remoteForm:true,unreachableRemoteBlocksApply:true,bootstrap,ptyResult,errors,noAgentCheckout:true,localInstallStarted:false};
+  const result={platform:process.platform,arch:process.arch,paths,firstRun:true,remoteForm:true,remoteSetupDirect:true,localInstallOfferAbsent:true,unreachableRemoteBlocksApply:true,bootstrap,ptyResult,errors,noAgentCheckout:true,localInstallStarted:false};
   fs.writeFileSync(path.join(logs,'smoke.json'),JSON.stringify(result,null,2)+'\n');
   console.log('REAL NATIVE PACKAGED APP SMOKE:',JSON.stringify(result,null,2));
 } finally {if(app)await app.close();}

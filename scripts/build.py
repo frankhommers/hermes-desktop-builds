@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch pinned public source, build unchanged Desktop, verify and natively launch it."""
+"""Fetch pinned source, apply the audited UI patch, verify and natively launch it."""
 import argparse
 import json
 import os
@@ -14,6 +14,7 @@ import tempfile
 from common import ROOT, WORK, OUT, load_pin, release_version, archive_name, clean_environment, run, gate_test_report
 from package import digest, native_inventory, inventory, make_archive, unpack_archive
 from macos_signing import verify_bundle, verify_extracted
+from source_patches import apply_patches, verify_source_state
 
 
 def main():
@@ -54,6 +55,8 @@ def main():
     if sha!=pin['commit']:raise RuntimeError('Fetched commit does not match pin')
     desktop=src/'apps/desktop';pkg=json.loads((desktop/'package.json').read_text())
     if pkg['version']!=pin['version']:raise RuntimeError('Upstream version does not match pin')
+    source_patch=apply_patches(src,pin,env=env)
+    (logs/'source-patch.json').write_text(json.dumps(source_patch,indent=2)+'\n')
     cmd('npm-ci',npm+['ci','--ignore-scripts','--no-audit','--no-fund','--workspace','apps/desktop','--include-workspace-root'],src)
     env['DESKTOP_SIGNING_TEST_SOURCE']=str(src)
     cmd('mac-signing-api-unit-tests',[node,'--test',str(ROOT/'tests/macos-signing-api.test.mjs')])
@@ -61,11 +64,14 @@ def main():
     installer=subprocess.check_output([node,'-p',"require.resolve('electron/install.js')"],cwd=desktop,env=env,text=True).strip()
     cmd('electron-install',[node,installer],desktop)
     cmd('typecheck',npm+['run','typecheck'],desktop)
-    # Full upstream suite on Linux; targeted unmodified safety/packaging tests on every host.
+    # Full patched upstream suite on Linux; UI/startup/packaging tests on every host.
     gate=None
     reporter=['--reporter='+str(ROOT/'scripts/completion-reporter.mjs')]
     targeted=['electron/first-run-setup-main-process.test.ts','electron/first-run-setup-gate.test.ts',
               'electron/primary-backend-startup.test.ts','src/components/desktop-install-overlay.test.tsx',
+              'src/app/chat/sidebar/fleet-rail.test.ts','src/app/chat/sidebar/profile-rail-fleet.test.tsx',
+              'src/app/chat/sidebar/fleet-rail-community.test.ts',
+              'src/app/chat/sidebar/connection-switcher.test.tsx','src/app/settings/connections-registry.test.tsx',
               'scripts/stage-native-deps.test.mjs','scripts/before-pack.test.mjs']
     env['DESKTOP_TEST_RECEIPT']=str(logs/'targeted-completion.json')
     rc=cmd('targeted-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+reporter+targeted,desktop,True)
@@ -151,11 +157,11 @@ def main():
     if target=='darwin':
         mac_signing=verify_extracted(extracted/bundle.name,arch,staged_count,cmd,logs)
         if inventory(bundle)!=inventory(extracted/bundle.name):raise RuntimeError('Mac negative tests did not restore exact bundle')
-    status=subprocess.check_output([git,'status','--porcelain','--untracked-files=no'],cwd=src,env=env,text=True)
-    if status:raise RuntimeError('Tracked upstream files changed: '+status)
+    verify_source_state(src,pin,source_patch,env=env)
     manifest={'version':version,'upstream':pin,'platform':target,'arch':arch,'electron':pkg['build']['electronVersion'],
               'archive':archive.name,'sha256':digest(archive),'bytes':archive.stat().st_size,
-              'sourceClean':True,'archiveRoundtrip':True,'nativeSmoke':json.loads((logs/'smoke.json').read_text()),
+              'sourceClean':False,'sourceVerified':True,'sourcePatch':source_patch,
+              'archiveRoundtrip':True,'nativeSmoke':json.loads((logs/'smoke.json').read_text()),
               'fullSuite':gate,'targetedSuite':targeted_gate,'macSigning':mac_signing,
               'signing':'Ad-hoc signed; no Developer ID or Apple notarization' if target=='darwin' else 'No Authenticode/signing',
               'limitations':['No real remote credentials/login/chat tested','Not Apple-notarized; Gatekeeper rejects ad-hoc publisher trust','No Finder Open Anyway or SmartScreen acceptance test','No microphone/camera/screen/TCC end-to-end test','Native full UI suite runs on Linux only']}

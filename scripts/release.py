@@ -9,6 +9,7 @@ import shutil
 from common import load_pin, release_version, archive_name
 from package import digest
 from macos_signing import validate_signing_receipt
+from source_patches import PATCH_DIR, patch_set, validate_patch_receipt
 
 REPO='frankhommers/hermes-desktop-builds'
 TARGETS=[('darwin','arm64'),('darwin','x64'),('win32','x64'),('linux','x64')]
@@ -44,7 +45,7 @@ cask "hermes-desktop" do
   caveats <<~EOS
     Ad-hoc signed community build; no Developer ID or Apple notarization.
     Gatekeeper remains enabled; app-specific approval may be required.
-    Choose "Connect to existing Hermes", not "Install Hermes locally".
+    First start connects to an existing Hermes server; local installation UI is hidden.
     An existing local Hermes runtime may be discovered and started by upstream.
     Review existing installations before launching if local startup must be avoided.
     No Python agent is installed by this cask. Updates use brew upgrade, not the in-app updater.
@@ -59,19 +60,20 @@ def verify_distribution(directory, pin, target):
     if platform=='darwin':validate_signing_receipt(manifest.get('macSigning'))
     if (manifest['platform'],manifest['arch'])!=target:raise ValueError('Mismatched artifact target')
     if manifest['upstream']!=pin or manifest['version']!=release_version(pin):raise ValueError('Mismatched source/version pin')
-    if not manifest['sourceClean'] or not manifest['archiveRoundtrip']:raise ValueError('Incomplete verification')
+    if manifest.get('sourceClean') is not False or manifest.get('sourceVerified') is not True or manifest.get('archiveRoundtrip') is not True:raise ValueError('Incomplete patched-source verification')
+    validate_patch_receipt(manifest.get('sourcePatch'),pin)
     smoke=manifest['nativeSmoke']
-    for flag in ('firstRun','remoteForm','unreachableRemoteBlocksApply','noAgentCheckout'):
+    for flag in ('firstRun','remoteForm','remoteSetupDirect','localInstallOfferAbsent','unreachableRemoteBlocksApply','noAgentCheckout'):
         if smoke.get(flag) is not True:raise ValueError('Missing smoke gate: '+flag)
-    if smoke['platform']!=platform or smoke['arch']!=arch or smoke['errors'] or smoke['localInstallStarted']:
+    if smoke['platform']!=platform or smoke['arch']!=arch or smoke.get('errors')!=[] or smoke.get('localInstallStarted') is not False:
         raise ValueError('Wrong/failed native smoke')
     if smoke['ptyResult']['exitCode']!=0 or 'HERMES_NATIVE_PTY_OK' not in smoke['ptyResult']['output']:raise ValueError('Native PTY failed')
     filename=archive_name(release_version(pin),platform,arch)
     if manifest['archive']!=filename:raise ValueError('Unexpected archive name')
     archive=directory/filename
     if digest(archive)!=manifest['sha256'] or archive.stat().st_size!=manifest['bytes']:raise ValueError('Artifact hash/size mismatch')
-    if not manifest['targetedSuite']['releaseGatePassed']:raise ValueError('Targeted-suite gate missing')
-    if platform=='linux' and not manifest['fullSuite']['releaseGatePassed']:raise ValueError('Full-suite gate missing')
+    if manifest['targetedSuite'].get('releaseGatePassed') is not True:raise ValueError('Targeted-suite gate missing')
+    if platform=='linux' and manifest['fullSuite'].get('releaseGatePassed') is not True:raise ValueError('Full-suite gate missing')
     return manifest
 
 
@@ -88,26 +90,36 @@ def prepare(downloads,destination,run_url):
         sources[label]=candidates[0].parent
         manifests[label]=verify_distribution(candidates[0].parent,pin,target)
     if len(manifests)!=len(TARGETS):raise ValueError('Missing target')
+    source_patch=manifests['linux-x64']['sourcePatch']
+    if any(m['sourcePatch']!=source_patch for m in manifests.values()):raise ValueError('Native hosts did not build the same patched source tree')
     destination.mkdir(parents=True)
     checks=[]
     for label,m in manifests.items():
         shutil.copyfile(sources[label]/m['archive'],destination/m['archive'])
         checks.append(m['sha256']+'  '+m['archive'])
         shutil.make_archive(str(destination/(label+'-evidence')),'zip',sources[label]/'logs')
-    payload={'schema':1,'buildRepository':REPO,'version':version,'upstream':pin,'buildRun':run_url,'targets':manifests}
+    for row in patch_set()['patches']:
+        shutil.copyfile(PATCH_DIR/row['file'],destination/row['file'])
+        checks.append(row['sha256']+'  '+row['file'])
+    shutil.copyfile(PATCH_DIR/'manifest.json',destination/'source-patches.json')
+    checks.append(digest(destination/'source-patches.json')+'  source-patches.json')
+    payload={'schema':1,'buildRepository':REPO,'version':version,'upstream':pin,'buildRun':run_url,'sourcePatch':source_patch,'targets':manifests}
     (destination/'release-manifest.json').write_text(json.dumps(payload,indent=2)+'\n')
     (destination/'SHA256SUMS').write_text('\n'.join(checks)+'\n')
     (destination/'hermes-desktop.rb').write_text(cask_text(version,manifests))
     full=manifests['linux-x64']['fullSuite']
     notes=f'''# Hermes Desktop {version} — community build
 
-Real, unmodified upstream Electron Desktop, not the local-agent bootstrap installer.
+Real upstream Electron Desktop with a small, hash-verified frontend patch, not the local-agent bootstrap installer.
 Source: https://github.com/{pin['repository']}/commit/{pin['commit']}
+Patch: see attached source-patches.json and .patch; applied before build/signing, never after.
 Build and native starttest evidence: {run_url}
 
 All four distributions were built and launched on matching native runners:
-macOS arm64 + x64, Windows x64 and Linux x64. Extracted-app first-run remote UI,
-inactive local bootstrap, refused unreachable remote, and real native PTY were exercised.
+macOS arm64 + x64, Windows x64 and Linux x64. Extracted-app direct first-run remote UI,
+absence of the local installation offer, inactive local bootstrap, refused unreachable
+remote, and real native PTY were exercised. Frontend regression tests cover hiding only
+the intentionally idle local rail icons while retaining remote controls and real failures.
 No Python runtime, agent checkout or credentials are bundled.
 
 **Mac bundles are ad-hoc signed, not Apple Developer ID signed or notarized. Windows is unsigned.**
@@ -129,8 +141,8 @@ reported per target in release-manifest.json: Windows has one explicit POSIX-fil
 fixture exception (a Darwin test assumes chmod 0755 on Windows). No native feature
 is stubbed or removed; actual Mac modes and PTY execution are verified on Macs.
 
-On a clean first start choose **Connect to existing Hermes**. Do not choose the local
-installer. This is not a hard-locked remote-only fork: existing local runtimes can be
+On a clean first start **Connect to existing Hermes** opens directly, without a local
+installation offer. This is not a hard-locked remote-only fork: existing local runtimes can be
 discovered/started by upstream; review them before launching if that must be avoided.
 
 Installation, rollback and security notes: https://github.com/{REPO}#downloads-and-installation

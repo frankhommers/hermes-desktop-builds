@@ -1,0 +1,94 @@
+name: Update official Hermes release
+
+on:
+  schedule:
+    # Native build timeout 70m + publication 20m; tap checks at 06:19 UTC.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: update-official-hermes-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'frankhommers/hermes-desktop-builds' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+      changed: ${{ steps.plan.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test trusted updater without upstream code or dependencies
+        run: python3 -m unittest discover -s tests -p test_update_upstream.py -v
+      - name: Read-only official release discovery
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/update_upstream.py plan --output out/update/upstream.json --metadata out/update/update.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          meta = json.loads(Path('out/update/update.json').read_text())
+          assert meta['action'] in ('update', 'dispatch', 'skip')
+          assert type(meta['changed']) is bool
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('action=' + meta['action'] + '\n')
+              output.write('changed=' + str(meta['changed']).lower() + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Official Hermes release check\n\n```json\n')
+              summary.write(json.dumps(meta, indent=2) + '\n```\n')
+          PY
+      - name: Transfer data only, never upstream executable code
+        if: steps.plan.outputs.action != 'skip'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: upstream-plan
+          path: out/update/
+          if-no-files-found: error
+          retention-days: 7
+
+  write:
+    needs: prepare
+    if: needs.prepare.outputs.action == 'update' || needs.prepare.outputs.action == 'dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      # Same trusted workflow SHA, not main after a race and not upstream/artifact code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Download only this run's metadata artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run download "$RUN_ID" --repo frankhommers/hermes-desktop-builds --name upstream-plan --dir out/update
+      - name: Revalidate, fast-forward pin only, explicitly dispatch native build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_BASE: ${{ github.sha }}
+        run: |
+          gh auth setup-git --hostname github.com
+          python3 scripts/update_upstream.py apply --candidate out/update/upstream.json --metadata out/update/update.json --expected-base "$EXPECTED_BASE"
+      # GITHUB_TOKEN pushes do not recursively trigger workflows. The trusted
+      # script explicitly dispatches build.yml --ref main -f expected_sha=<SHA>.
+      # Publication belongs exclusively to the separately gated release workflow.
+      # A failing new pin is retained; the previous public release stays intact.
+      # Missing dispatch recovery expires after 48h and requires the pin-only
+      # updater commit still at main. Recorded failed builds are never retried.
