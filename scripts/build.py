@@ -11,8 +11,9 @@ import subprocess
 import sys
 import tempfile
 
-from common import ROOT, WORK, OUT, load_pin, release_version, clean_environment, run, gate_test_report
+from common import ROOT, WORK, OUT, load_pin, release_version, archive_name, clean_environment, run, gate_test_report
 from package import digest, native_inventory, inventory, make_archive, unpack_archive
+from macos_signing import verify_bundle, verify_extracted
 
 
 def main():
@@ -73,9 +74,17 @@ def main():
     cmd('build',npm+['run','build'],desktop)
     builder=subprocess.check_output([node,'-p',"require.resolve('electron-builder/cli.js')"],cwd=desktop,env=env,text=True).strip()
     pack=WORK/'packed'
+    staged_count=0
     buildargs=[node,builder,{'darwin':'--mac','win32':'--win','linux':'--linux'}[target],'--dir','--'+arch,'--publish','never','-c.forceCodeSigning=false','-c.directories.output='+str(pack)]
-    if target=='darwin':buildargs+=['-c.mac.identity=null']
+    if target=='darwin':
+        # Delay outer signing until all resources exist. Sign staged native bytes only
+        # after upstream beforePack re-stages them, BEFORE ASAR hashes are computed.
+        buildargs+=['-c.mac.identity=null','-c.beforePack='+str(ROOT/'scripts/before-pack-macos.mjs')]
+        env['DESKTOP_BUILD_PYTHON']=sys.executable
+        env['DESKTOP_BUILD_LOGS']=str(logs)
     cmd('electron-builder',buildargs,desktop)
+    env.pop('DESKTOP_BUILD_PYTHON',None)
+    env.pop('DESKTOP_BUILD_LOGS',None)
     dirname={'darwin':'mac-arm64' if arch=='arm64' else 'mac','win32':'win-unpacked','linux':'linux-unpacked'}[target]
     original=pack/dirname/('Hermes.app' if target=='darwin' else '')
     bundle=WORK/'bundle'/('Hermes.app' if target=='darwin' else 'Hermes')
@@ -95,12 +104,13 @@ def main():
     if target=='darwin':
         info=plistlib.loads((bundle/'Contents/Info.plist').read_bytes())
         if info['CFBundleExecutable']!='Hermes' or info['CFBundleIdentifier']!='com.nousresearch.hermes':raise RuntimeError('Wrong Mac bundle identity')
-        # No Developer ID, keychain discovery or notarization. Retain upstream native binaries.
+        cmd('mac-final-sign',[node,str(ROOT/'scripts/sign-macos.mjs'),str(src),str(bundle)],desktop)
+        staged_count=json.loads((logs/'mac-staged-native-count.json').read_text())['count']
+        if verify_bundle(bundle,arch,cmd,'mac-bundle-verify')!=staged_count:raise RuntimeError('Mac native signing count mismatch')
     natives=native_inventory(bundle,target,arch)
     (logs/'native-binaries.json').write_text(json.dumps(natives,indent=2)+'\n')
     cmd('inspect',[node,str(ROOT/'scripts/inspect.mjs'),str(src),str(resources),target,arch,str(logs)],ROOT)
-    suffix='.tar.gz' if target=='linux' else '.zip'
-    archive=out/f'Hermes-{version}-{target}-{arch}-unsigned{suffix}'
+    archive=out/archive_name(version,target,arch)
     make_archive(bundle,archive)
     extracted=WORK/'extracted'
     unpack_archive(archive,extracted)
@@ -134,13 +144,18 @@ def main():
         (logs/'test-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
         print('FULL SUITE (exceptions are explicit):',json.dumps(gate),flush=True)
     env.pop('DESKTOP_TEST_RECEIPT',None)
+    mac_signing=None
+    if target=='darwin':
+        mac_signing=verify_extracted(extracted/bundle.name,arch,staged_count,cmd,logs)
+        if inventory(bundle)!=inventory(extracted/bundle.name):raise RuntimeError('Mac negative tests did not restore exact bundle')
     status=subprocess.check_output([git,'status','--porcelain','--untracked-files=no'],cwd=src,env=env,text=True)
     if status:raise RuntimeError('Tracked upstream files changed: '+status)
     manifest={'version':version,'upstream':pin,'platform':target,'arch':arch,'electron':pkg['build']['electronVersion'],
               'archive':archive.name,'sha256':digest(archive),'bytes':archive.stat().st_size,
               'sourceClean':True,'archiveRoundtrip':True,'nativeSmoke':json.loads((logs/'smoke.json').read_text()),
-              'fullSuite':gate,'targetedSuite':targeted_gate,'signing':'No Developer ID/Authenticode signing or Apple notarization',
-              'limitations':['No real remote credentials/login/chat tested','No quarantined download/Gatekeeper or SmartScreen acceptance test','No microphone/camera/screen/TCC end-to-end test','Native full UI suite runs on Linux only']}
+              'fullSuite':gate,'targetedSuite':targeted_gate,'macSigning':mac_signing,
+              'signing':'Ad-hoc signed; no Developer ID or Apple notarization' if target=='darwin' else 'No Authenticode/signing',
+              'limitations':['No real remote credentials/login/chat tested','Not Apple-notarized; Gatekeeper rejects ad-hoc publisher trust','No Finder Open Anyway or SmartScreen acceptance test','No microphone/camera/screen/TCC end-to-end test','Native full UI suite runs on Linux only']}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     (out/'SHA256SUMS').write_text(manifest['sha256']+'  '+archive.name+'\n')
     print('VERIFIED DISTRIBUTION:',json.dumps(manifest),flush=True)

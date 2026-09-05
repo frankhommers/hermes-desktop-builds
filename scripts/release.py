@@ -6,8 +6,9 @@ from pathlib import Path
 import re
 import shutil
 
-from common import load_pin, release_version
+from common import load_pin, release_version, archive_name
 from package import digest
+from macos_signing import validate_signing_receipt
 
 REPO='frankhommers/hermes-desktop-builds'
 TARGETS=[('darwin','arm64'),('darwin','x64'),('win32','x64'),('linux','x64')]
@@ -18,12 +19,12 @@ def cask_text(version, assets):
     blocks=[]
     for arch,condition in [('arm64','on_arm'),('x64','on_intel')]:
         asset=assets['darwin-'+arch]
-        filename=f'Hermes-{version}-darwin-{arch}-unsigned.zip'
+        filename=archive_name(version,'darwin',arch)
         if asset['archive']!=filename or not re.fullmatch('[0-9a-f]{64}',asset['sha256']):raise ValueError('Bad cask asset')
         blocks.append(f'''  {condition} do
     sha256 "{asset['sha256']}"
 
-    url "https://github.com/{REPO}/releases/download/v#{{version}}/Hermes-#{{version}}-darwin-{arch}-unsigned.zip"
+    url "https://github.com/{REPO}/releases/download/v#{{version}}/Hermes-#{{version}}-darwin-{arch}-adhoc.zip"
   end''')
     return f'''# frozen_string_literal: true
 
@@ -41,7 +42,8 @@ cask "hermes-desktop" do
   app "Hermes.app"
 
   caveats <<~EOS
-    Unsigned community build; not Apple-notarized. Gatekeeper remains enabled.
+    Ad-hoc signed community build; no Developer ID or Apple notarization.
+    Gatekeeper remains enabled; app-specific approval may be required.
     Choose "Connect to existing Hermes", not "Install Hermes locally".
     An existing local Hermes runtime may be discovered and started by upstream.
     Review existing installations before launching if local startup must be avoided.
@@ -54,6 +56,7 @@ end
 def verify_distribution(directory, pin, target):
     manifest=json.loads((directory/'manifest.json').read_text())
     platform,arch=target
+    if platform=='darwin':validate_signing_receipt(manifest.get('macSigning'))
     if (manifest['platform'],manifest['arch'])!=target:raise ValueError('Mismatched artifact target')
     if manifest['upstream']!=pin or manifest['version']!=release_version(pin):raise ValueError('Mismatched source/version pin')
     if not manifest['sourceClean'] or not manifest['archiveRoundtrip']:raise ValueError('Incomplete verification')
@@ -63,8 +66,7 @@ def verify_distribution(directory, pin, target):
     if smoke['platform']!=platform or smoke['arch']!=arch or smoke['errors'] or smoke['localInstallStarted']:
         raise ValueError('Wrong/failed native smoke')
     if smoke['ptyResult']['exitCode']!=0 or 'HERMES_NATIVE_PTY_OK' not in smoke['ptyResult']['output']:raise ValueError('Native PTY failed')
-    suffix='.tar.gz' if platform=='linux' else '.zip'
-    filename=f'Hermes-{release_version(pin)}-{platform}-{arch}-unsigned{suffix}'
+    filename=archive_name(release_version(pin),platform,arch)
     if manifest['archive']!=filename:raise ValueError('Unexpected archive name')
     archive=directory/filename
     if digest(archive)!=manifest['sha256'] or archive.stat().st_size!=manifest['bytes']:raise ValueError('Artifact hash/size mismatch')
@@ -108,8 +110,14 @@ macOS arm64 + x64, Windows x64 and Linux x64. Extracted-app first-run remote UI,
 inactive local bootstrap, refused unreachable remote, and real native PTY were exercised.
 No Python runtime, agent checkout or credentials are bundled.
 
-**Unsigned preview: no Apple Developer ID/notarization or Windows Authenticode.**
-Native CI launch is NOT a quarantined-download/Gatekeeper/SmartScreen acceptance test.
+**Mac bundles are ad-hoc signed, not Apple Developer ID signed or notarized. Windows is unsigned.**
+Mac signatures are verified before packaging and after extracting the final ZIP, including
+the native modules. Negative tests reproduce rejection of missing CodeResources and
+tampered resources. Native dependency signing precedes ASAR hashing; all ASAR integrity
+checks remain enforced. No local codesign/xattr repair is required to fix the old signature.
+Gatekeeper remains enabled: its assessment of the quarantined, valid ad-hoc app is
+recorded as REJECTED for publisher trust, not treated as acceptance. App-specific
+Open Anyway is not automated or tested; no Apple notarization or SmartScreen clearance.
 No live remote login/chat, user peripherals or OS permissions were end-to-end tested.
 Do not disable system security to install this build.
 
