@@ -12,6 +12,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -v
+      - run: node --test tests/asar-paths.test.mjs
   build:
     if: github.event_name == 'workflow_dispatch'
     needs: scripts
@@ -43,6 +44,8 @@ jobs:
           architecture: ${{ matrix.arch }}
       - name: Unit-test build tooling
         run: python3 -m unittest discover -s tests -v
+      - name: ASAR path regression tests
+        run: node --test tests/asar-paths.test.mjs
       - name: Build, inspect, roundtrip, and launch native app
         run: python3 scripts/build.py --run --expected-platform ${{ matrix.platform }} --expected-arch ${{ matrix.arch }}
       - name: Verified standalone distribution and evidence
