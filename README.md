@@ -106,7 +106,11 @@ stop and use a properly signed distribution rather than bypassing organizational
 Check `sha256sum <archive.tar.gz>`, extract into a new directory with
 `tar -xzf <archive.tar.gz>`, then run `./Hermes/Hermes` in a graphical desktop session.
 System Electron/Chromium GUI libraries are required; see the upstream Electron Linux
-requirements. This tarball is not a distro package and does not register a launcher.
+requirements. The bundled Linux window-enumeration implementation additionally invokes
+`xprop` and `xwininfo` against an X11 display; the startup/PTY smoke test does not exercise
+that feature or certify native Wayland support. Across platforms, `get-windows` payloads
+are inspected, but their actual window-enumeration/permission behavior is not covered by
+the native PTY test. This tarball is not a distro package and does not register a launcher.
 Linux CI launches the real Electron renderer with `--ozone-platform=headless` and
 `--no-sandbox` because hosted/headless environments may restrict
 Chromium user namespaces. That flag is **not** baked into the app or normal run advice.
