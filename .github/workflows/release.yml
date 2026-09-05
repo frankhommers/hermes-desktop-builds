@@ -43,7 +43,7 @@ jobs:
           pathlib.Path('out/build-receipt.json').write_text(json.dumps(receipt,indent=2))
           subprocess.run(['gh','run','download',run,'--repo',repo,'--pattern','desktop-*','--dir','out/downloads'],check=True)
           subprocess.run(['python3','scripts/release.py','--downloads','out/downloads','--destination','out/release','--run-url',receipt['html_url']],check=True)
-      - name: Create draft, verify exact assets, then publish immutable preview
+      - name: Create draft, verify exact assets, then publish numbered Latest release
         shell: python
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,20 +57,20 @@ jobs:
           assets=sorted(p for p in directory.iterdir() if p.name!='RELEASE-NOTES.md')
           existing=subprocess.run(['gh','release','view',tag,'--repo',repo,'--json','apiUrl'],capture_output=True)
           if existing.returncode!=0:
-              subprocess.run(['gh','release','create',tag,*map(str,assets),'--repo',repo,'--target',receipt['head_sha'],'--title',f'Hermes Desktop {manifest["version"]} — community preview','--notes-file',str(directory/'RELEASE-NOTES.md'),'--draft','--prerelease','--latest=false'],check=True)
+              subprocess.run(['gh','release','create',tag,*map(str,assets),'--repo',repo,'--target',receipt['head_sha'],'--title',manifest['version'],'--notes-file',str(directory/'RELEASE-NOTES.md'),'--draft','--prerelease=false','--latest=false'],check=True)
           view=json.loads(subprocess.check_output(['gh','release','view',tag,'--repo',repo,'--json','apiUrl']))
           # Unpublished drafts do not resolve through the REST releases/tags endpoint.
           endpoint=view['apiUrl']
           assert endpoint.startswith(f'https://api.github.com/repos/{repo}/releases/')
           remote=json.loads(subprocess.check_output(['gh','api',endpoint]))
-          assert remote['draft'] and remote['prerelease'], 'Never overwrite a published release'
+          assert remote['draft'] and not remote['prerelease'], 'Never overwrite a published release'
           assert remote['tag_name']==tag and remote['target_commitish']==receipt['head_sha']
           assert remote['body'].strip()==(directory/'RELEASE-NOTES.md').read_text().strip()
           assert {a['name']:a['size'] for a in remote['assets']}=={p.name:p.stat().st_size for p in assets}
           byname={a['name']:a for a in remote['assets']}
           for m in manifest['targets'].values():
               assert byname[m['archive']]['digest']=='sha256:'+m['sha256']
-          subprocess.run(['gh','release','edit',tag,'--repo',repo,'--draft=false','--prerelease','--latest=false'],check=True)
+          subprocess.run(['gh','release','edit',tag,'--repo',repo,'--draft=false','--prerelease=false','--latest=true'],check=True)
           final=json.loads(subprocess.check_output(['gh','api',endpoint]))
-          assert not final['draft'] and final['prerelease']
+          assert not final['draft'] and not final['prerelease']
           print('Verified public release:',final['html_url'])
