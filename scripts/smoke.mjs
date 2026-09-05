@@ -43,7 +43,10 @@ try {
   const test=page.getByRole('button',{name:'Test connection',exact:true});
   await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Test connection'&&!b.disabled));
   await test.click();
-  await page.waitForTimeout(2000);
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Test connection'&&!b.disabled));
+  const remoteProbe=await page.evaluate(url=>window.hermesDesktop.probeConnectionConfig(url),`http://127.0.0.1:${port}`);
+  assert.equal(remoteProbe.reachable,false);
+  assert(remoteProbe.error,'Actual native IPC/network probe must return an error');
   assert.equal(await page.getByRole('button',{name:'Apply and reconnect',exact:true}).isDisabled(),true);
   fs.writeFileSync(path.join(logs,'unreachable-remote.txt'),await page.locator('body').innerText());
   const ptyResult=await app.evaluate(async({app})=>{

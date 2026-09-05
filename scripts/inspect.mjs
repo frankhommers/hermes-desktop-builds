@@ -9,8 +9,9 @@ const root=path.resolve(import.meta.dirname,'..');
 const pin=JSON.parse(fs.readFileSync(path.join(root,'upstream.json')));
 const require=createRequire(path.join(source,'apps/desktop/package.json'));
 const asar=require('@electron/asar');
+for(const notice of ['LICENSE.hermes.txt','LICENSE.electron.txt','LICENSES.chromium.html'])assert(fs.statSync(path.join(resources,notice)).size>0,notice);
 const archive=path.join(resources,'app.asar');
-const entries=asar.listPackage(archive).map(x=>x.replace(/^\//,''));
+const entries=asar.listPackage(archive).map(x=>x.replaceAll('\\','/').replace(/^\//,''));
 const inventory=[];
 const syntaxDir=path.join(logs,'syntax');fs.mkdirSync(syntaxDir,{recursive:true});
 for(const name of entries){

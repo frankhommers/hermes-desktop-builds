@@ -1,5 +1,6 @@
 """Shared pin validation, isolated environment, logs and explicit test gates."""
 import json
+from collections import Counter
 import os
 from pathlib import Path
 import re
@@ -89,10 +90,24 @@ KNOWN_FAILURES = {
 
 
 def gate_test_report(report, pin, returncode, platform=None):
+    completion=report.get('runCompletion',{})
+    if not completion or completion.get('unhandledErrors') or completion.get('reason') not in ('passed','failed'):
+        raise ValueError('Missing completion receipt, interrupted run or unhandled error')
     if report.get('numTotalTests',0) < 1 or report.get('numRuntimeErrorTestSuites',0):
         raise ValueError('Empty test run or runtime error')
+    assertions=[a for s in report.get('testResults',[]) for a in s.get('assertionResults',[])]
+    counts=Counter(a['status'] for a in assertions)
+    expected={'numTotalTests':len(assertions),'numPassedTests':counts['passed'],
+              'numFailedTests':counts['failed'],'numPendingTests':counts['pending']+counts['skipped'],
+              'numTodoTests':counts['todo']}
+    if set(counts)-{'passed','failed','pending','skipped','todo'} or any(report.get(k,0)!=v for k,v in expected.items()):
+        raise ValueError('Inconsistent test totals')
+    if returncode!=(1 if counts['failed'] else 0) or completion['reason']!=('failed' if counts['failed'] else 'passed'):
+        raise ValueError('Unexpected test exit code/completion reason')
     failures = []
     for suite in report.get('testResults',[]):
+        if suite.get('message'):
+            raise ValueError('Unreviewed suite/hook error: '+suite['message'])
         assertions = suite.get('assertionResults',[])
         failed = [a for a in assertions if a['status']=='failed']
         if suite.get('status')=='failed' and not failed:

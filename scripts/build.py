@@ -58,17 +58,23 @@ def main():
     cmd('typecheck',npm+['run','typecheck'],desktop)
     # Full upstream suite on Linux; targeted unmodified safety/packaging tests on every host.
     gate=None
+    reporter=['--reporter='+str(ROOT/'scripts/completion-reporter.mjs')]
     if target=='linux':
         report=logs/'vitest.json'
-        rc=cmd('upstream-full-tests',npm+['test','--','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)],desktop,True)
-        gate=gate_test_report(json.loads(report.read_text()),pin,rc)
+        env['DESKTOP_TEST_RECEIPT']=str(logs/'full-completion.json')
+        rc=cmd('upstream-full-tests',npm+['test','--','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)]+reporter,desktop,True)
+        data=json.loads(report.read_text());data['runCompletion']=json.loads((logs/'full-completion.json').read_text())
+        gate=gate_test_report(data,pin,rc)
         (logs/'test-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
         print('FULL SUITE (exceptions are explicit):',json.dumps(gate),flush=True)
     targeted=['electron/first-run-setup-main-process.test.ts','electron/first-run-setup-gate.test.ts',
               'electron/primary-backend-startup.test.ts','src/components/desktop-install-overlay.test.tsx',
               'scripts/stage-native-deps.test.mjs','scripts/before-pack.test.mjs']
-    rc=cmd('targeted-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+targeted,desktop,True)
-    targeted_gate=gate_test_report(json.loads((logs/'targeted.json').read_text()),pin,rc,target)
+    env['DESKTOP_TEST_RECEIPT']=str(logs/'targeted-completion.json')
+    rc=cmd('targeted-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+reporter+targeted,desktop,True)
+    data=json.loads((logs/'targeted.json').read_text());data['runCompletion']=json.loads((logs/'targeted-completion.json').read_text())
+    targeted_gate=gate_test_report(data,pin,rc,target)
+    env.pop('DESKTOP_TEST_RECEIPT')
     (logs/'targeted-gate.json').write_text(json.dumps(targeted_gate,indent=2)+'\n')
     print('TARGETED SUITE:',json.dumps(targeted_gate),flush=True)
     cmd('build',npm+['run','build'],desktop)
@@ -84,6 +90,9 @@ def main():
     shutil.move(str(original),str(bundle))
     resources=bundle/'Contents/Resources' if target=='darwin' else bundle/'resources'
     shutil.copyfile(src/'LICENSE',resources/'LICENSE.hermes.txt')
+    electron_dist=Path(installer).parent/'dist'
+    shutil.copyfile(electron_dist/'LICENSE',resources/'LICENSE.electron.txt')
+    shutil.copyfile(electron_dist/'LICENSES.chromium.html',resources/'LICENSES.chromium.html')
     # Preserve available license/notice files for bundled and build-time npm dependencies.
     license_dir=resources/'ThirdPartyLicenses'
     for i,modules in enumerate((src/'node_modules',desktop/'node_modules')):

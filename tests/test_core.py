@@ -40,6 +40,7 @@ class BuildTests(unittest.TestCase):
 
     def test_unexpected_test_failures_block(self):
         report={'numTotalTests':1,'numFailedTests':1,'numRuntimeErrorTestSuites':0,'testResults':[{'name':'other.test.ts','status':'failed','assertionResults':[{'fullName':'bad','status':'failed'}]}]}
+        report['runCompletion']={'reason':'failed','unhandledErrors':[]}
         with self.assertRaises(ValueError): gate_test_report(report, PIN, 1)
         with self.assertRaises(ValueError): gate_test_report({'numTotalTests':0},PIN,0)
         with self.assertRaises(ValueError): gate_test_report({'numTotalTests':1,'numFailedTests':0,'testResults':[]},PIN,1)
@@ -57,12 +58,17 @@ class BuildTests(unittest.TestCase):
 
     def test_windows_permission_exception_is_platform_and_commit_bound(self):
         report={'numTotalTests':1,'numFailedTests':1,'testResults':[{'name':'/src/scripts/stage-native-deps.test.mjs','status':'failed','assertionResults':[{'fullName':'darwin staging ships the Swift helper executable and the rewritten windows.js','status':'failed'}]}]}
+        report['runCompletion']={'reason':'failed','unhandledErrors':[]}
         self.assertFalse(gate_test_report(report,PIN,1,'win32')['suiteGreen'])
+        for mutation in [lambda r:r['testResults'][0].update(message='afterAll error'),lambda r:r['runCompletion'].update(unhandledErrors=['unhandled']),lambda r:r.update(numTotalTests=99)]:
+            changed=json.loads(json.dumps(report));mutation(changed)
+            with self.assertRaises(ValueError):gate_test_report(changed,PIN,1,'win32')
+        with self.assertRaises(ValueError):gate_test_report(report,PIN,137,'win32')
         with self.assertRaises(ValueError):gate_test_report(report,PIN,1,'darwin')
         with self.assertRaises(ValueError):gate_test_report(report,{**PIN,'commit':'1'*40},1,'win32')
 
     def test_clean_test_report(self):
-        r={'numTotalTests':3,'numPassedTests':3,'numFailedTests':0,'numRuntimeErrorTestSuites':0,'testResults':[]}
+        r={'numTotalTests':3,'numPassedTests':3,'numFailedTests':0,'numRuntimeErrorTestSuites':0,'testResults':[{'name':'passing.test.ts','status':'passed','assertionResults':[{'status':'passed'}]*3}],'runCompletion':{'reason':'passed','unhandledErrors':[]}}
         self.assertEqual(gate_test_report(r,PIN,0)['allowedFailures'],[])
 
     def test_binary_headers(self):
