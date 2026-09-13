@@ -74,10 +74,15 @@ def main():
               'electron/primary-backend-startup.test.ts','src/components/desktop-install-overlay.test.tsx',
               'src/app/chat/sidebar/fleet-rail.test.ts','src/app/chat/sidebar/profile-rail-fleet.test.tsx',
               'src/app/chat/sidebar/fleet-rail-community.test.ts','electron/community-homebrew-update.test.ts',
-              'electron/ssh-connection.test.ts','src/store/voice-prefs.test.ts','src/lib/version-status.test.ts',
+              'src/store/voice-prefs.test.ts','src/lib/version-status.test.ts',
               'scripts/write-build-stamp.test.mjs',
               'src/app/chat/sidebar/connection-switcher.test.tsx','src/app/settings/connections-registry.test.tsx',
               'scripts/stage-native-deps.test.mjs','scripts/before-pack.test.mjs']
+    # This upstream SSH suite exercises POSIX ControlMaster socket semantics and
+    # contains POSIX path assertions. Our patch changes only the non-Windows
+    # default control directory; keep testing it on both native POSIX hosts.
+    if target!='win32':
+        targeted.append('electron/ssh-connection.test.ts')
     env['DESKTOP_TEST_RECEIPT']=str(logs/'targeted-completion.json')
     rc=cmd('targeted-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+reporter+targeted,desktop,True)
     data=json.loads((logs/'targeted.json').read_text());data['runCompletion']=json.loads((logs/'targeted-completion.json').read_text())

@@ -16,6 +16,7 @@ class PipelineContractTests(unittest.TestCase):
                      'community-homebrew-update.test.ts', 'write-build-stamp.test.mjs',
                      'ssh-connection.test.ts', 'voice-prefs.test.ts', 'version-status.test.ts'):
             self.assertIn(test, source)
+        self.assertIn("if target!='win32':\n        targeted.append('electron/ssh-connection.test.ts')", source)
 
     def test_homebrew_distribution_is_mac_only_and_runtime_verified(self):
         build = (ROOT / 'scripts/build.py').read_text()
@@ -24,6 +25,7 @@ class PipelineContractTests(unittest.TestCase):
         self.assertIn("if target=='darwin':\n        env['HERMES_DESKTOP_DISTRIBUTION']='frankhommers-homebrew'", build)
         self.assertIn("env['HERMES_DESKTOP_DISTRIBUTION_VERSION']=version", build)
         self.assertIn("assert.equal(stamp.distribution,'frankhommers-homebrew')", inspect)
+        self.assertIn("runtimeDesktopVersionInfo.appVersion", smoke)
         self.assertIn("assert.equal(runtimeDesktopVersion,installStamp.distributionVersion)", smoke)
 
     def test_native_build_is_read_only_and_release_requires_verified_main(self):
