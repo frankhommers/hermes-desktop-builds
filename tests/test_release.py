@@ -14,6 +14,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn('verified:',text)
         self.assertIn('on_arm do',text);self.assertIn('on_intel do',text)
         self.assertIn('app "Hermes.app"',text)
+        self.assertIn('This build can apply later Desktop updates in-app through Homebrew.',text)
+        self.assertIn('Remote backends are never updated by the Desktop updater.',text)
+        self.assertNotIn('not the in-app updater',text)
         for prohibited in ('postflight','preflight','system_command','xattr','zap trash','sha256 :no_check'):
             self.assertNotIn(prohibited,text)
         with self.assertRaises(ValueError):cask_text('0.17.0.1; injection',assets)
