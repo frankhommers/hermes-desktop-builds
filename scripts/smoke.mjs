@@ -31,7 +31,10 @@ try {
   assert.equal(paths.arch,process.arch);
   assert.equal(paths.hermesHome,path.join(home,'.hermes'));
   const installStamp=JSON.parse(fs.readFileSync(path.join(paths.resources,'install-stamp.json'),'utf8'));
-  const runtimeDesktopVersion=await page.evaluate(()=>window.hermesDesktop.getVersion());
+  const runtimeDesktopVersionInfo=await page.evaluate(()=>window.hermesDesktop.getVersion());
+  assert.equal(typeof runtimeDesktopVersionInfo,'object');
+  assert.equal(typeof runtimeDesktopVersionInfo.appVersion,'string');
+  const runtimeDesktopVersion=runtimeDesktopVersionInfo.appVersion;
   if(process.platform==='darwin'){
     assert.equal(installStamp.distribution,'frankhommers-homebrew');
     assert.match(installStamp.distributionVersion,/^\d+(?:\.\d+)+$/);
@@ -81,7 +84,7 @@ try {
   assert.equal(after.active,false);assert.deepEqual(after.stages,{});
   assert(!fs.existsSync(path.join(home,'.hermes/hermes-agent')),'No local agent checkout');
   assert.equal(errors.length,0,JSON.stringify(errors));
-  const result={platform:process.platform,arch:process.arch,paths,installStamp,runtimeDesktopVersion,firstRun:true,remoteForm:true,remoteSetupDirect:true,localInstallOfferAbsent:true,unreachableRemoteBlocksApply:true,bootstrap,ptyResult,errors,noAgentCheckout:true,localInstallStarted:false};
+  const result={platform:process.platform,arch:process.arch,paths,installStamp,runtimeDesktopVersionInfo,runtimeDesktopVersion,firstRun:true,remoteForm:true,remoteSetupDirect:true,localInstallOfferAbsent:true,unreachableRemoteBlocksApply:true,bootstrap,ptyResult,errors,noAgentCheckout:true,localInstallStarted:false};
   fs.writeFileSync(path.join(logs,'smoke.json'),JSON.stringify(result,null,2)+'\n');
   console.log('REAL NATIVE PACKAGED APP SMOKE:',JSON.stringify(result,null,2));
 } finally {if(app)await app.close();}
