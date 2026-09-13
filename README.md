@@ -24,9 +24,17 @@ and the [tap](https://github.com/frankhommers/homebrew-tap/blob/main/casks/herme
 The tap publishes an update only after actual Homebrew installation and deep/strict
 `codesign` verification on macOS 15 Apple Silicon and Intel.
 
+Upstream has separate version domains inside one source tag. For the current pin,
+`v2026.9.11` is the calendar release tag, Hermes Agent/backend is `0.21.2`, and the
+Electron Desktop package is `0.17.2`. This repository appends its immutable packaging
+revision, so its first build from that Desktop source is `0.17.2.1`. Those values are
+not expected to be numerically equal; the exact upstream commit proves which versions
+belong together.
+
 **Gatekeeper still rejects the quarantined ad-hoc publisher.** These are valid code seals,
-not Developer ID signing or Apple notarization. Raw per-target evidence and the existing
-Linux/Windows upstream test exceptions accompany the release; no failing suite is labelled green.
+not Developer ID signing or Apple notarization. Raw per-target evidence and any narrowly
+commit/platform/test/error-bound fixture exception accompany the release; no failing suite
+is labelled green.
 
 ## Scope
 
@@ -89,7 +97,15 @@ brew upgrade --cask frankhommers/tap/hermes-desktop
 ```
 
 Homebrew installs the app only. It does not install a local Hermes agent or bypass
-Gatekeeper. For manual installation, verify the ZIP's SHA256 against `SHA256SUMS`
+Gatekeeper. Starting with community build `0.17.2.1`, the packaged Mac app identifies
+itself as Homebrew-managed: its in-app update check reads only this tap's cask version,
+**Update now** runs fixed argument arrays equivalent to the two commands above (never a
+shell string), then re-reads the bundle at the running app path and requires a newer valid
+distribution stamp at least equal to the checked cask target before it reports success or
+restarts Hermes Desktop. It does not update or modify the connected remote backend. The
+first installation of an updater-capable build must still be performed through Homebrew.
+
+For manual installation, verify the ZIP's SHA256 against `SHA256SUMS`
 (`shasum -a 256 <download.zip>`), then use macOS `ditto`, preserving symlinks/modes:
 
 ```sh
@@ -140,9 +156,11 @@ Linux CI launches the real Electron renderer with `--ozone-platform=headless` an
 Chromium user namespaces. That flag is **not** baked into the app or normal run advice.
 
 For all platforms choose the existing-remote route and configure your HTTPS backend.
-Client replacement does not update your server. Quit the app and keep the previous
-version for rollback. Do not delete external client state. The upstream in-app updater
-expects a source/agent install and is not the update mechanism for these standalone builds.
+Updating or replacing a client does not update your server. Quit the app and keep the
+previous version for rollback; do not delete external client state. The packaged Mac
+community build uses the Homebrew updater described above. Other standalone packages
+still require manual replacement; they never pretend a missing local Git checkout is an
+app update source.
 
 ## Reproduce
 
@@ -162,15 +180,18 @@ with lifecycle scripts initially disabled, explicitly
 installs Electron, then uses upstream build/staging/builder hooks. Native dependencies
 are never replaced by stubs. Unknown test failures block the distribution.
 
-The full upstream UI/Electron suite runs on Linux; targeted first-run/native-packaging
-tests and typechecking run on every host. For the initial pinned commit, two precisely
-named pre-existing failures may be reported as explicit exceptions: a native-button-title
-style violation, and an SSH control-socket path assertion under a long isolated HOME.
-The suite is **not called green** when either fails; raw JSON/logs and the exception
-classification are retained. Windows also reports one explicit cross-Darwin fixture
-exception: a test expects POSIX mode 0755, but Windows exposes 0666. Actual Mac helper
-modes and native PTY execution are tested on Macs; no native feature is faked or removed.
-This exception is Windows-only. All exceptions apply only to that exact commit.
+The full upstream UI/Electron suite runs on Linux; targeted first-run, updater,
+SSH/storage, and native-packaging tests plus typechecking run on every host. The reviewed
+long-HOME SSH failure is fixed in the patched product path with a short uid-scoped control
+directory whose ownership, type and mode are checked before use. The two voice-preference
+failures were broken spies; the corrected fixtures now inject the storage exceptions and
+pass.
+
+Windows may report one explicit cross-Darwin fixture exception: the exact pinned test
+expects POSIX mode 0755 while Windows exposes 0666. It is accepted only for the exact
+upstream commit, Windows platform, test path/title and reviewed `438 !== 493` assertion
+signature. Actual Mac helper modes and native PTY execution are tested on both Mac lanes;
+no native feature is faked or removed. Any other failure or changed signature blocks.
 Temporary Git test directories use GIT_CEILING_DIRECTORIES so they cannot accidentally
 discover or change the enclosing build repository.
 
@@ -207,9 +228,10 @@ The current source pin is newer than the latest official release available when 
 automation was introduced. That older release is skipped, not installed as a downgrade.
 Node/toolchain changes and patch conflicts still require a maintainer; the workflow never
 auto-edits a patch, invents test exceptions, or blindly updates dependencies to make CI pass.
-Build revisions are monotonic: upstream Desktop `0.17.0`, revision `3` becomes `0.17.0.3`.
-The existing exact-commit test exceptions do not carry forward to another upstream commit.
-No in-app update feed is configured.
+Build revisions are monotonic: upstream Desktop `0.17.2`, revision `1` becomes `0.17.2.1`.
+Any exact-commit fixture exception does not carry forward to another upstream commit.
+The packaged Mac build checks the public Homebrew cask for Desktop updates; it never uses
+backend `0.21.x` as the Desktop version and never updates the remote server.
 
 After a main-branch build succeeds, **Publish verified release** starts automatically via
 `workflow_run`. Manual dispatch with the numeric run ID remains available for recovery.

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from source_patches import apply_patches, verify_source_state, validate_patch_receipt
+from source_patches import apply_patches, verify_source_state, validate_patch_receipt, _patch_path_is_approved
 
 
 class SourcePatchTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class SourcePatchTests(unittest.TestCase):
         self.patchdir.mkdir()
         self.git('init', '--initial-branch=fixture')
         self.git('config', 'core.autocrlf', 'false')
-        self.file = self.src / 'apps/desktop/src/panel.ts'
+        self.file = self.src / 'apps/desktop/src/components/panel.ts'
         self.file.parent.mkdir(parents=True)
         self.file.write_text('export const localInstallVisible = true\n', newline='\n')
         (self.src / '.gitignore').write_text('dist/\nnode_modules/\n', newline='\n')
@@ -32,9 +32,9 @@ class SourcePatchTests(unittest.TestCase):
         self.pin = {'commit': self.git('rev-parse', 'HEAD').strip()}
         self.file.write_text('export const localInstallVisible = false\n', newline='\n')
         patch = self.git('diff', '--binary', '--full-index', '--no-ext-diff', 'HEAD').encode()
-        (self.patchdir / 'ui.patch').write_bytes(patch)
+        (self.patchdir / 'remote-client-ui.patch').write_bytes(patch)
         self.git('restore', '.')
-        self.manifest = {'schema': 1, 'patches': [{'file': 'ui.patch', 'sha256': hashlib.sha256(patch).hexdigest()}]}
+        self.manifest = {'schema': 1, 'patches': [{'file': 'remote-client-ui.patch', 'sha256': hashlib.sha256(patch).hexdigest()}]}
         self.write_manifest()
 
     def git(self, *args):
@@ -85,7 +85,7 @@ class SourcePatchTests(unittest.TestCase):
             self.apply()
 
     def test_hash_corruption_is_rejected_before_source_is_changed(self):
-        (self.patchdir / 'ui.patch').write_text('corrupted patch')
+        (self.patchdir / 'remote-client-ui.patch').write_text('corrupted patch')
         with self.assertRaises(ValueError):
             self.apply()
         self.assertIn('true', self.file.read_text())
@@ -105,7 +105,7 @@ class SourcePatchTests(unittest.TestCase):
 
     def test_manifest_rejects_unsafe_names_duplicates_and_nonliteral_schema(self):
         original = copy.deepcopy(self.manifest)
-        for name in ('../ui.patch', '/ui.patch', 'ui.patch\n', 'ui.patch;id'):
+        for name in ('../remote-client-ui.patch', '/remote-client-ui.patch', 'remote-client-ui.patch\n', 'remote-client-ui.patch;id'):
             self.manifest = copy.deepcopy(original)
             self.manifest['patches'][0]['file'] = name
             self.write_manifest()
@@ -122,6 +122,20 @@ class SourcePatchTests(unittest.TestCase):
         self.write_manifest()
         with self.assertRaises(ValueError):
             self.apply()
+
+    def test_patch_names_have_separate_fail_closed_source_scopes(self):
+        self.assertTrue(_patch_path_is_approved(
+            'remote-client-ui.patch', 'apps/desktop/src/components/desktop-install-overlay.tsx'))
+        self.assertFalse(_patch_path_is_approved(
+            'remote-client-ui.patch', 'apps/desktop/electron/main.ts'))
+        self.assertTrue(_patch_path_is_approved(
+            'homebrew-client-updater.patch', 'apps/desktop/electron/main.ts'))
+        self.assertTrue(_patch_path_is_approved(
+            'homebrew-client-updater.patch', 'apps/desktop/src/store/voice-prefs.test.ts'))
+        self.assertFalse(_patch_path_is_approved(
+            'homebrew-client-updater.patch', 'apps/desktop/electron/preload.ts'))
+        self.assertFalse(_patch_path_is_approved(
+            'anything-else.patch', 'apps/desktop/electron/main.ts'))
 
 
 if __name__ == '__main__':

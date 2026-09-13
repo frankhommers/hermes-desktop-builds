@@ -53,6 +53,7 @@ for(const name of entries){
 }
 fs.rmSync(syntaxDir,{recursive:true});
 const pkg=JSON.parse(readEntry('package.json'));
+const distributionVersion=`${pin.version}.${pin.revision}`;
 assert.equal(pkg.main,'dist/electron-main.mjs');assert.equal(pkg.version,pin.version);
 for(const required of [pkg.main,'dist/electron-preload.js','dist/index.html','dist/node_modules/node-pty/lib/index.js','dist/node_modules/get-windows/index.js'])assert(inventory.some(x=>x.name===required),required);
 assert(inventory.some(x=>x.name.startsWith('dist/node_modules/node-pty/')&&x.name.endsWith('.node')&&x.unpacked),'Native node-pty missing');
@@ -63,5 +64,12 @@ assert(renderer.includes('Connect to existing Hermes'));
 assert(renderer.includes('No local install will start.'));
 const stamp=JSON.parse(fs.readFileSync(path.join(resources,'install-stamp.json')));
 assert.equal(stamp.commit,pin.commit);assert.equal(stamp.dirty,false);
+if(platform==='darwin'){
+  assert.equal(stamp.distribution,'frankhommers-homebrew');
+  assert.equal(stamp.distributionVersion,distributionVersion);
+}else{
+  assert.equal(stamp.distribution,undefined);
+  assert.equal(stamp.distributionVersion,undefined);
+}
 fs.writeFileSync(path.join(logs,'asar.json'),JSON.stringify({platform,arch,files:inventory.length,integrity:'all entries verified',stamp,inventory},null,2)+'\n');
 console.log('ASAR integrity/native presence/credential-pattern scan/compiled JS syntax verified:',inventory.length,'files');

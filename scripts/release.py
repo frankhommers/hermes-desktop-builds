@@ -78,7 +78,7 @@ def verify_distribution(directory, pin, target):
 
 
 def prepare(downloads,destination,run_url):
-    if not re.fullmatch(r'https://github.com/frankhommers/hermes-desktop-builds/actions/runs/[0-9]+',run_url):raise ValueError('Invalid run URL')
+    if not re.fullmatch(rf'https://github.com/{re.escape(REPO)}/actions/runs/[0-9]+',run_url):raise ValueError('Invalid run URL')
     if destination.exists():raise ValueError('Refusing to overwrite a release directory')
     pin=load_pin();version=release_version(pin)
     manifests={}
@@ -121,6 +121,13 @@ absence of the local installation offer, inactive local bootstrap, refused unrea
 remote, and real native PTY were exercised. Frontend regression tests cover hiding only
 the intentionally idle local rail icons while retaining remote controls and real failures.
 No Python runtime, agent checkout or credentials are bundled.
+
+On macOS this build is stamped as the `frankhommers-homebrew` distribution. Its in-app
+Desktop update check reads the public Homebrew cask, runs fixed non-shell Homebrew argv,
+and requires the bundle at the running app path to contain a newer valid distribution stamp
+at least equal to the checked target before reporting success or restarting. It never
+treats the remote backend version as the Desktop version and never updates the server. The
+first upgrade to this updater-capable build must still be installed through Homebrew.
 
 **Mac bundles are ad-hoc signed, not Apple Developer ID signed or notarized. Windows is unsigned.**
 Mac signatures are verified before packaging and after extracting the final ZIP, including

@@ -1,8 +1,9 @@
-"""Apply a hash-pinned UI patch before building, then verify the exact patched tree.
+"""Apply hash-pinned source patches before building, then verify the exact tree.
 
 The upstream checkout is intentionally dirty after application: sourceClean must be
 false. A separate receipt records both Git trees and the checked-in patch hashes.
-No fuzzy fallback, auto-repair, upstream execution or credentials are involved here.
+Each named patch has a narrow fail-closed path allowlist; no fuzzy fallback, auto-repair,
+upstream execution or credentials are involved here.
 """
 import hashlib
 import json
@@ -11,6 +12,30 @@ import re
 import subprocess
 
 PATCH_DIR = Path(__file__).resolve().parents[1] / 'patches'
+REMOTE_UI_PATCH = 'remote-client-ui.patch'
+REMOTE_UI_PATH_RE = re.compile(r'apps/desktop/src/(?:app/chat/sidebar|components)/[A-Za-z0-9_./-]+\.tsx?')
+HOMEBREW_UPDATER_PATCH = 'homebrew-client-updater.patch'
+HOMEBREW_UPDATER_PATHS = frozenset({
+    'apps/desktop/electron/community-homebrew-update.test.ts',
+    'apps/desktop/electron/community-homebrew-update.ts',
+    'apps/desktop/electron/main.ts',
+    'apps/desktop/electron/ssh-connection.ts',
+    'apps/desktop/scripts/write-build-stamp.mjs',
+    'apps/desktop/scripts/write-build-stamp.test.mjs',
+    'apps/desktop/src/lib/version-status.test.ts',
+    'apps/desktop/src/lib/version-status.ts',
+    'apps/desktop/src/store/voice-prefs.test.ts',
+})
+
+
+def _patch_path_is_approved(patch_name, source_path):
+    if not isinstance(source_path, str) or '..' in source_path.split('/'):
+        return False
+    if patch_name == REMOTE_UI_PATCH:
+        return REMOTE_UI_PATH_RE.fullmatch(source_path) is not None
+    if patch_name == HOMEBREW_UPDATER_PATCH:
+        return source_path in HOMEBREW_UPDATER_PATHS
+    return False
 
 
 def patch_set(patch_dir=PATCH_DIR):
@@ -62,7 +87,7 @@ def validate_patch_receipt(receipt, pin, patch_dir=PATCH_DIR):
         if not isinstance(value, str) or not re.fullmatch('[0-9a-f]{40}', value) or value == '0' * 40:
             raise ValueError('Invalid source tree identity: ' + key)
     if receipt['upstreamTree'] == receipt['patchedTree']:
-        raise ValueError('UI patch must change the source tree')
+        raise ValueError('Source patch set must change the source tree')
     return receipt
 
 
@@ -88,18 +113,19 @@ def apply_patches(src, pin, patch_dir=PATCH_DIR, env=None):
         raise ValueError('Refusing to patch an already-modified source checkout')
     upstream_tree = _git(src, 'rev-parse', 'HEAD^{tree}', env=env)
     for row in expected['patches']:
-        path = str((Path(patch_dir) / row['file']).resolve())
-        # Restrict the presentation patch to Desktop frontend sources/tests.
-        # git apply itself also rejects unsafe repository-relative paths.
+        patch_name = row['file']
+        path = str((Path(patch_dir) / patch_name).resolve())
+        # Each hash-pinned patch has a separate exact scope. The updater patch
+        # may touch Electron/build-stamp code; it cannot silently widen into
+        # unrelated source. git apply also rejects unsafe repository paths.
         numstat = _git(src, 'apply', '--numstat', path, env=env)
         if not numstat:
             raise ValueError('Empty patch')
         for line in numstat.splitlines():
             fields = line.split('\t')
             if (len(fields) != 3 or not fields[0].isdigit() or not fields[1].isdigit()
-                    or not re.fullmatch(r'apps/desktop/src/[A-Za-z0-9_./-]+\.tsx?', fields[2])
-                    or '..' in fields[2].split('/')):
-                raise ValueError('Patch is outside the approved frontend/test scope')
+                    or not _patch_path_is_approved(patch_name, fields[2])):
+                raise ValueError(f'Patch {patch_name} is outside its approved source scope')
         _git(src, 'apply', '--index', '--check', '--whitespace=error-all', path, env=env)
         _git(src, 'apply', '--index', '--whitespace=error-all', path, env=env)
     receipt = {'schema': 1, 'upstreamCommit': pin['commit'], 'upstreamTree': upstream_tree,

@@ -86,13 +86,40 @@ def run(label, command, cwd, env, logs, allow_failure=False):
     return rc
 
 
-KNOWN_COMMIT = 'b0ab2e163a50d4e6c36507eba955a6067fde6abc'
-KNOWN_FAILURES = {
-    ('src/components/ui/__tests__/no-native-title.test.ts', 'no native title= on button elements uses <Tip> instead of native title= on all button elements'):
-        'Upstream listing-embed.tsx uses a native title; style rule fails, no source patch applied.',
-    ('electron/ssh-connection.test.ts', 'controlSocketPath default base stays under sun_path even with the temp-listener suffix'):
-        'Isolated long HOME exceeds the SSH control socket test path budget; URL remote smoke does not use SSH.'
-}
+KNOWN_COMMIT = '939e45c91d751fadd94dcd1b873ac3cb44846213'
+WINDOWS_DARWIN_MODE_FIXTURE = (
+    'scripts/stage-native-deps.test.mjs',
+    'darwin staging ships the Swift helper executable and the rewritten windows.js',
+)
+WINDOWS_DARWIN_MODE_MESSAGE = (
+    'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:',
+    '438 !== 493',
+)
+WINDOWS_DARWIN_MODE_STACK = re.compile(
+    r'^at .*[\\/]apps[\\/]desktop[\\/]scripts[\\/]stage-native-deps\.test\.mjs:597:12$'
+)
+ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def _matches_windows_darwin_mode_fixture(name, assertion, pin, platform):
+    messages = assertion.get('failureMessages')
+    if not (
+        platform == 'win32'
+        and pin['commit'] == KNOWN_COMMIT
+        and name.endswith('/' + WINDOWS_DARWIN_MODE_FIXTURE[0])
+        and assertion.get('fullName') == WINDOWS_DARWIN_MODE_FIXTURE[1]
+        and isinstance(messages, list)
+        and len(messages) == 1
+        and isinstance(messages[0], str)
+    ):
+        return False
+    lines = [line.strip() for line in ANSI_ESCAPE.sub('', messages[0]).splitlines() if line.strip()]
+    return (
+        len(lines) >= 3
+        and tuple(lines[:2]) == WINDOWS_DARWIN_MODE_MESSAGE
+        and all(line.startswith('at ') for line in lines[2:])
+        and any(WINDOWS_DARWIN_MODE_STACK.fullmatch(line) for line in lines[2:])
+    )
 
 
 def gate_test_report(report, pin, returncode, platform=None):
@@ -120,11 +147,11 @@ def gate_test_report(report, pin, returncode, platform=None):
             raise ValueError('Failed suite without assertion results: '+suite['name'])
         for a in failed:
             name = suite['name'].replace('\\','/')
-            match = next((reason for (file,title),reason in KNOWN_FAILURES.items()
-                          if name.endswith('/'+file) and a['fullName']==title),None)
-            if platform=='win32' and name.endswith('/scripts/stage-native-deps.test.mjs') and a['fullName']=='darwin staging ships the Swift helper executable and the rewritten windows.js':
-                match='Cross-Darwin fixture asserts POSIX 0755 on Windows (0666); actual Mac helper mode is verified in native Mac builds.'
-            if pin['commit'] != KNOWN_COMMIT or not match:
+            match = None
+            if _matches_windows_darwin_mode_fixture(name, a, pin, platform):
+                match = ('Cross-Darwin fixture asserted POSIX 0755 but Windows reported 0666; '
+                         'actual Mac helper mode is verified in both native Mac builds.')
+            if not match:
                 raise ValueError(f'Unreviewed upstream failure: {name}: {a["fullName"]}')
             failures.append({'file':name,'test':a['fullName'],'reason':match})
     if len(failures)!=report.get('numFailedTests',0) or (returncode and not failures):
