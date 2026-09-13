@@ -15,7 +15,7 @@ TEST_TMP=Path(__file__).resolve().parents[1]/'.work/test-tmp'
 TEST_TMP.mkdir(parents=True,exist_ok=True)
 tempfile.tempdir=str(TEST_TMP)
 
-PIN = {'repository': 'NousResearch/hermes-agent', 'commit': 'b0ab2e163a50d4e6c36507eba955a6067fde6abc', 'version': '0.17.0', 'revision': 1, 'node': '22.22.2'}
+PIN = {'repository': 'NousResearch/hermes-agent', 'commit': '939e45c91d751fadd94dcd1b873ac3cb44846213', 'version': '0.17.2', 'revision': 1, 'node': '22.22.2'}
 
 class BuildTests(unittest.TestCase):
     def test_pin_is_exact(self):
@@ -57,15 +57,57 @@ class BuildTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,'Actual source repo remains discoverable')
 
     def test_windows_permission_exception_is_platform_and_commit_bound(self):
-        report={'numTotalTests':1,'numFailedTests':1,'testResults':[{'name':'/src/scripts/stage-native-deps.test.mjs','status':'failed','assertionResults':[{'fullName':'darwin staging ships the Swift helper executable and the rewritten windows.js','status':'failed'}]}]}
-        report['runCompletion']={'reason':'failed','unhandledErrors':[]}
-        self.assertFalse(gate_test_report(report,PIN,1,'win32')['suiteGreen'])
-        for mutation in [lambda r:r['testResults'][0].update(message='afterAll error'),lambda r:r['runCompletion'].update(unhandledErrors=['unhandled']),lambda r:r.update(numTotalTests=99)]:
-            changed=json.loads(json.dumps(report));mutation(changed)
-            with self.assertRaises(ValueError):gate_test_report(changed,PIN,1,'win32')
-        with self.assertRaises(ValueError):gate_test_report(report,PIN,137,'win32')
-        with self.assertRaises(ValueError):gate_test_report(report,PIN,1,'darwin')
-        with self.assertRaises(ValueError):gate_test_report(report,{**PIN,'commit':'1'*40},1,'win32')
+        message = (
+            'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'
+            '438 !== 493\n\n'
+            '    at D:/a/hermes-desktop-builds/.work/src/apps/desktop/scripts/'
+            'stage-native-deps.test.mjs:597:12\n'
+            '    at file:///D:/a/hermes-desktop-builds/.work/src/node_modules/'
+            '@vitest/runner/dist/index.js:1:1'
+        )
+        report = {
+            'numTotalTests': 1,
+            'numFailedTests': 1,
+            'testResults': [{
+                'name': '/src/scripts/stage-native-deps.test.mjs',
+                'status': 'failed',
+                'assertionResults': [{
+                    'fullName': 'darwin staging ships the Swift helper executable and the rewritten windows.js',
+                    'status': 'failed',
+                    'failureMessages': [message],
+                }],
+            }],
+            'runCompletion': {'reason': 'failed', 'unhandledErrors': []},
+        }
+        self.assertFalse(gate_test_report(report, PIN, 1, 'win32')['suiteGreen'])
+        for mutation in [
+            lambda r: r['testResults'][0].update(message='afterAll error'),
+            lambda r: r['runCompletion'].update(unhandledErrors=['unhandled']),
+            lambda r: r.update(numTotalTests=99),
+        ]:
+            changed = json.loads(json.dumps(report))
+            mutation(changed)
+            with self.assertRaises(ValueError):
+                gate_test_report(changed, PIN, 1, 'win32')
+        with self.assertRaises(ValueError):
+            gate_test_report(report, PIN, 137, 'win32')
+        with self.assertRaises(ValueError):
+            gate_test_report(report, PIN, 1, 'darwin')
+        with self.assertRaises(ValueError):
+            gate_test_report(report, {**PIN, 'commit': '1' * 40}, 1, 'win32')
+        for changed_message in (
+            '',
+            'DIFFERENT AND UNREVIEWED FAILURE CAUSE',
+            message.replace('438 !== 493', '493 !== 438'),
+            message.replace('stage-native-deps.test.mjs:597:12', 'stage-native-deps.test.mjs:598:12'),
+            message + '\nUNREVIEWED EXTRA ERROR',
+        ):
+            changed = json.loads(json.dumps(report))
+            changed['testResults'][0]['assertionResults'][0]['failureMessages'] = (
+                [] if not changed_message else [changed_message]
+            )
+            with self.subTest(message=changed_message), self.assertRaises(ValueError):
+                gate_test_report(changed, PIN, 1, 'win32')
 
     def test_clean_test_report(self):
         r={'numTotalTests':3,'numPassedTests':3,'numFailedTests':0,'numRuntimeErrorTestSuites':0,'testResults':[{'name':'passing.test.ts','status':'passed','assertionResults':[{'status':'passed'}]*3}],'runCompletion':{'reason':'passed','unhandledErrors':[]}}

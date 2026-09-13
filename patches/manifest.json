@@ -4,6 +4,10 @@
     {
       "file": "remote-client-ui.patch",
       "sha256": "a4851338f1ae3af4cbc8e39f059c747772c5500ab1e5931d91b50702a30a459e"
+    },
+    {
+      "file": "homebrew-client-updater.patch",
+      "sha256": "7de0d264d7e17d89bb90f5eeba1d2bcacf2f7ddfb3f1568e1941ee491c32f163"
     }
   ]
 }

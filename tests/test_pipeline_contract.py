@@ -12,8 +12,19 @@ class PipelineContractTests(unittest.TestCase):
         self.assertLess(source.index("cmd('upstream-full-tests'"), source.index('verify_source_state('))
         self.assertIn("'sourceClean':False,'sourceVerified':True,'sourcePatch':source_patch", source)
         for test in ('fleet-rail.test.ts', 'profile-rail-fleet.test.tsx',
-                     'desktop-install-overlay.test.tsx', 'connections-registry.test.tsx'):
+                     'desktop-install-overlay.test.tsx', 'connections-registry.test.tsx',
+                     'community-homebrew-update.test.ts', 'write-build-stamp.test.mjs',
+                     'ssh-connection.test.ts', 'voice-prefs.test.ts', 'version-status.test.ts'):
             self.assertIn(test, source)
+
+    def test_homebrew_distribution_is_mac_only_and_runtime_verified(self):
+        build = (ROOT / 'scripts/build.py').read_text()
+        inspect = (ROOT / 'scripts/inspect.mjs').read_text()
+        smoke = (ROOT / 'scripts/smoke.mjs').read_text()
+        self.assertIn("if target=='darwin':\n        env['HERMES_DESKTOP_DISTRIBUTION']='frankhommers-homebrew'", build)
+        self.assertIn("env['HERMES_DESKTOP_DISTRIBUTION_VERSION']=version", build)
+        self.assertIn("assert.equal(stamp.distribution,'frankhommers-homebrew')", inspect)
+        self.assertIn("assert.equal(runtimeDesktopVersion,installStamp.distributionVersion)", smoke)
 
     def test_native_build_is_read_only_and_release_requires_verified_main(self):
         build = (ROOT / '.github/workflows/build.yml').read_text()

@@ -25,11 +25,22 @@ try {
   assert.equal(await page.getByText('Install Hermes locally',{exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Back',exact:true}).count(),0);
   fs.writeFileSync(path.join(logs,'first-run.txt'),await page.locator('body').innerText());
-  const paths=await app.evaluate(({app})=>({packaged:app.isPackaged,path:app.getAppPath(),home:app.getPath('home'),userData:app.getPath('userData'),hermesHome:process.env.HERMES_HOME,platform:process.platform,arch:process.arch,versions:process.versions}));
+  const paths=await app.evaluate(({app})=>({packaged:app.isPackaged,path:app.getAppPath(),resources:process.resourcesPath,home:app.getPath('home'),userData:app.getPath('userData'),hermesHome:process.env.HERMES_HOME,platform:process.platform,arch:process.arch,versions:process.versions}));
   assert.equal(paths.packaged,true);
   assert.equal(paths.platform,process.platform);
   assert.equal(paths.arch,process.arch);
   assert.equal(paths.hermesHome,path.join(home,'.hermes'));
+  const installStamp=JSON.parse(fs.readFileSync(path.join(paths.resources,'install-stamp.json'),'utf8'));
+  const runtimeDesktopVersion=await page.evaluate(()=>window.hermesDesktop.getVersion());
+  if(process.platform==='darwin'){
+    assert.equal(installStamp.distribution,'frankhommers-homebrew');
+    assert.match(installStamp.distributionVersion,/^\d+(?:\.\d+)+$/);
+    assert.equal(runtimeDesktopVersion,installStamp.distributionVersion);
+  }else{
+    assert.equal(installStamp.distribution,undefined);
+    assert.equal(installStamp.distributionVersion,undefined);
+    assert.equal(runtimeDesktopVersion,installStamp.desktopVersion);
+  }
 
   fs.writeFileSync(path.join(logs,'remote-form.txt'),await page.locator('body').innerText());
   const bootstrap=await page.evaluate(()=>window.hermesDesktop.getBootstrapState());
@@ -70,7 +81,7 @@ try {
   assert.equal(after.active,false);assert.deepEqual(after.stages,{});
   assert(!fs.existsSync(path.join(home,'.hermes/hermes-agent')),'No local agent checkout');
   assert.equal(errors.length,0,JSON.stringify(errors));
-  const result={platform:process.platform,arch:process.arch,paths,firstRun:true,remoteForm:true,remoteSetupDirect:true,localInstallOfferAbsent:true,unreachableRemoteBlocksApply:true,bootstrap,ptyResult,errors,noAgentCheckout:true,localInstallStarted:false};
+  const result={platform:process.platform,arch:process.arch,paths,installStamp,runtimeDesktopVersion,firstRun:true,remoteForm:true,remoteSetupDirect:true,localInstallOfferAbsent:true,unreachableRemoteBlocksApply:true,bootstrap,ptyResult,errors,noAgentCheckout:true,localInstallStarted:false};
   fs.writeFileSync(path.join(logs,'smoke.json'),JSON.stringify(result,null,2)+'\n');
   console.log('REAL NATIVE PACKAGED APP SMOKE:',JSON.stringify(result,null,2));
 } finally {if(app)await app.close();}

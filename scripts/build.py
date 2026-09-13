@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch pinned source, apply the audited UI patch, verify and natively launch it."""
+"""Fetch pinned source, apply audited source patches, verify and natively launch it."""
 import argparse
 import json
 import os
@@ -36,6 +36,9 @@ def main():
     label=f'{target}-{arch}'
     out=OUT/label;logs=out/'logs';logs.mkdir(parents=True,exist_ok=True)
     env=clean_environment(WORK,pin)
+    if target=='darwin':
+        env['HERMES_DESKTOP_DISTRIBUTION']='frankhommers-homebrew'
+        env['HERMES_DESKTOP_DISTRIBUTION_VERSION']=version
     node=shutil.which('node');git=shutil.which('git');npm_path=shutil.which('npm.cmd' if os.name=='nt' else 'npm')
     if not all((node,git,npm_path)):raise RuntimeError('Node, npm and Git are required')
     npm_file=Path(npm_path).parent/'node_modules/npm/bin/npm-cli.js' if os.name=='nt' else Path(npm_path).resolve()
@@ -70,7 +73,9 @@ def main():
     targeted=['electron/first-run-setup-main-process.test.ts','electron/first-run-setup-gate.test.ts',
               'electron/primary-backend-startup.test.ts','src/components/desktop-install-overlay.test.tsx',
               'src/app/chat/sidebar/fleet-rail.test.ts','src/app/chat/sidebar/profile-rail-fleet.test.tsx',
-              'src/app/chat/sidebar/fleet-rail-community.test.ts',
+              'src/app/chat/sidebar/fleet-rail-community.test.ts','electron/community-homebrew-update.test.ts',
+              'electron/ssh-connection.test.ts','src/store/voice-prefs.test.ts','src/lib/version-status.test.ts',
+              'scripts/write-build-stamp.test.mjs',
               'src/app/chat/sidebar/connection-switcher.test.tsx','src/app/settings/connections-registry.test.tsx',
               'scripts/stage-native-deps.test.mjs','scripts/before-pack.test.mjs']
     env['DESKTOP_TEST_RECEIPT']=str(logs/'targeted-completion.json')
