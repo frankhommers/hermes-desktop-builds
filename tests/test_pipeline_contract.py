@@ -27,6 +27,7 @@ class PipelineContractTests(unittest.TestCase):
         self.assertIn("assert.equal(stamp.distribution,'frankhommers-homebrew')", inspect)
         self.assertIn("runtimeDesktopVersionInfo.appVersion", smoke)
         self.assertIn("assert.equal(runtimeDesktopVersion,installStamp.distributionVersion)", smoke)
+        self.assertIn("assert.equal(runtimeDesktopVersion,sourceDesktopVersion)", smoke)
 
     def test_native_build_is_read_only_and_release_requires_verified_main(self):
         build = (ROOT / '.github/workflows/build.yml').read_text()
