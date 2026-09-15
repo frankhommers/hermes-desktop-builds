@@ -56,9 +56,9 @@ cask "{TOKEN}" do
   end
 
   auto_updates true
+  depends_on arch: :arm64
   depends_on formula: ["node", "python@3.12"]
   depends_on macos: :sequoia
-  depends_on arch: :arm64
 
   installer script: {{
     executable:   "#{{HOMEBREW_PREFIX}}/opt/python@3.12/bin/python3.12",
