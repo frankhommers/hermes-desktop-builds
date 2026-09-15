@@ -22,6 +22,20 @@ class SafetyTests(unittest.TestCase):
         r['connections'][1].update(authMode='token', token={'encrypted': 'envelope-b'})
         i.validate_saved_route(c, r)
 
+    def test_incomplete_owner_route_is_rejected(self):
+        for profile in (None, 123):
+            tile = {'storedSessionId': 's', 'ownerProfile': 'default', 'ownerRoute': {'connectionId': 'remote-1'}}
+            if profile is not None:
+                tile['ownerRoute']['profile'] = profile
+            with self.subTest(profile=profile), self.assertRaises(i.Refusal):
+                i.validate_restore_storage(Path('/unused'), {i.TILE_KEYS[1]: json.dumps({'default': [tile]})}, {'remote-1'})
+
+    def test_stage_preserves_upstream_signature(self):
+        with patch.object(i, 'run') as run, patch.object(i, 'verify_app') as verify:
+            i.stage_app(Path('/source/Hermes.app'), Path('/staged/Hermes.app'))
+            run.assert_called_once_with(['/usr/bin/ditto', Path('/source/Hermes.app'), Path('/staged/Hermes.app')])
+            verify.assert_called_once_with(Path('/staged/Hermes.app'))
+
     def test_invalid_restore_shape_is_rejected(self):
         with self.assertRaises(i.Refusal):
             i.validate_restore_storage(Path('/unused'), {i.TILE_KEYS[1]: '[]'})

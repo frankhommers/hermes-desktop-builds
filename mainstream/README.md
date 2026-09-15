@@ -95,8 +95,10 @@ Do not promote an empty-read result to acceptance without that native fixture.
 ## Swap, recovery, and future ownership
 
 The build tree remains in the canonical source for official updater discovery.
-The app is copied with `ditto` into a same-parent staging directory, ad-hoc signed,
-and verified with `codesign --verify --deep --strict` before and after renaming.
+The app is copied with `ditto` into a same-parent staging directory, preserving
+the official build's signature, entitlements and designated requirement. It is
+verified with `codesign --verify --deep --strict` before and after renaming;
+the migrator never re-signs the bundle.
 The old app is kept next to the destination as `Hermes.pre-mainstream-*.app`.
 If the post-swap verification fails, the old app is renamed back automatically.
 Ad-hoc signing is **not** Developer ID signing or notarization; quarantine is not

@@ -109,8 +109,8 @@ def main():
             raise RuntimeError(f'Expected one native app, got {len(apps)}')
         source_app = apps[0]
         installed = root/'Applications/Hermes.app'; installed.parent.mkdir()
-        run(['/usr/bin/ditto', source_app, installed])
-        run(['/usr/bin/codesign', '--verify', '--deep', '--strict', installed])
+        run([python, HERE/'stage_native.py', source_app, installed, logs], source)
+        evidence['migratorStaging'] = json.loads((logs/'migrator-staging.json').read_text())
         stamp = json.loads((installed/'Contents/Resources/install-stamp.json').read_text())
         if stamp['commit'] != SOURCE_COMMIT or stamp.get('distribution') or stamp.get('dirty'):
             raise RuntimeError('Native stamp must prove clean official source and no community provider')

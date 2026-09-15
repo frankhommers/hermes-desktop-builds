@@ -106,6 +106,8 @@ def validate_restore_storage(userdata, snapshot=None, allowed_ids=None):
                 route = tile.get('ownerRoute') or {}
                 if not isinstance(route, dict) or route.get('mode') == 'local' or route.get('connectionId') == 'local':
                     raise Refusal('Restored local tile found; close it in the old app, quit, then retry. Nothing was cleared.')
+                if not isinstance(route.get('connectionId'), str) or not isinstance(route.get('profile'), str):
+                    raise Refusal('Incomplete restored owner route; the official client would discard it. Close that tile first.')
                 if not route.get('connectionId') or (allowed_ids is not None and route.get('connectionId') not in allowed_ids):
                     raise Refusal('Restored tile ownership is ambiguous; close it in the old app before migrating.')
 
@@ -194,6 +196,13 @@ def verify_app(app):
     if not (app/'Contents/MacOS/Hermes').is_file():
         raise Refusal('Build did not produce a Hermes executable.')
     run(['/usr/bin/codesign', '--verify', '--deep', '--strict', app])
+
+
+def stage_app(source, stage):
+    # Official build signs inside-out with JIT/mic entitlements and stable DR.
+    # Re-signing with plain --deep --sign - destroys those properties.
+    run(['/usr/bin/ditto', source, stage])
+    verify_app(stage)
 
 
 def swap_app(stage, app, backup, verify):
@@ -298,8 +307,7 @@ def install(userdata, app, confirmed=False):
         raise Refusal('Saved routing changed during build; refusing swap.')
     stage_dir = Path(tempfile.mkdtemp(prefix='.hermes-migration-', dir=app.parent))
     stage = stage_dir/'Hermes.app'
-    run(['/usr/bin/ditto', artifacts[0], stage])
-    run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-', stage])
+    stage_app(artifacts[0], stage)
     old = app.parent/('Hermes.pre-mainstream-'+backup.name+'.app')
     swap_app(stage, app, old, verify_app)
     print('Installed without launching. Old app retained beside the new app; private backup: '+str(backup))
