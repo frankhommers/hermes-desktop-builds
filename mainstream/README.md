@@ -1,8 +1,12 @@
 # One-time official Hermes Desktop migration (candidate)
 
-**Not yet native-Mac accepted or published.** Linux tests verify safety helpers;
-they do not prove the Electron storage origin, native build, Finder launch,
-Gatekeeper, real remote authentication, or a subsequent official update.
+**Candidate: full-installer native acceptance is still running.** The official
+build, seeded Chromium storage-copy audit, outage startup, advancing source/app
+update and automatic LaunchServices relaunch passed on Apple Silicon and Intel
+in [native run 35015384911](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/35015384911).
+That run is not proof of the entire migrator, real VPS authentication, Finder
+toolchain discovery on a personal Mac, or Gatekeeper acceptance. Subsequent
+native staging evidence also confirms preserved signing entitlements/identity.
 
 This installs a real, unmodified official Git checkout on `main` at initial
 commit `f13a87e610611ce6d9fd82bff8c2d2a642312183`, tracking `origin/main` from
@@ -65,8 +69,9 @@ Original userData, cookies, OAuth token storage and encrypted saved connection
 credentials are never rewritten, decrypted, printed or cleared. Before installing,
 the tool makes a private (0700 parent) full userData backup plus existing
 `.hermes/config.yaml`, `.env`, `auth.json`, and `profiles`. Backups may contain
-secrets and should stay private. Subprocess output is suppressed because tools
-can echo credential material; errors report only the failed stage category.
+secrets and should stay private. Subprocess output is suppressed in the terminal
+because tools can echo credential material; private `commands.log` under the
+backup directory retains diagnostics. Do not publish that log without review.
 
 `storage-audit.cjs` uses the newly installed Electron dependency and a **private
 copy** of userData, never the live profile. It loads only a blank local HTML page,
@@ -88,9 +93,10 @@ contains the tile serialization/restore formats; `src/store/session.ts:74-139`
 scopes last navigation by profile and connection; Electron `window-state.ts` is
 geometry-only; secondary window ownership is a runtime query parameter
 (`src/store/windows.ts`). Packaged renderer URLs use `file://`
-(`electron/main.ts:14835-14840`). **The copy/blank-file storage-origin read must
-still be demonstrated on native macOS with a seeded real Chromium database.**
-Do not promote an empty-read result to acceptance without that native fixture.
+(`electron/main.ts:14835-14840`). **The copy/blank-file storage-origin read was
+demonstrated with seeded real Chromium databases on ARM and Intel in the run
+linked above**: remote tiles are accepted, local tiles rejected, and original
+database bytes preserved. This is not a real-account OAuth persistence test.
 
 ## Swap, recovery, and future ownership
 

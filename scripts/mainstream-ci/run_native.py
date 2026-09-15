@@ -115,6 +115,23 @@ def main():
         if stamp['commit'] != SOURCE_COMMIT or stamp.get('distribution') or stamp.get('dirty'):
             raise RuntimeError('Native stamp must prove clean official source and no community provider')
         evidence['installStamp'] = stamp
+        if args.update_cycle and platform.machine() == 'arm64':
+            # Exercise the real one-time installer, not just its helper calls.
+            # Retain bootstrap material in the disposable sandbox for observer
+            # imports; the canonical installation target becomes genuinely absent.
+            (logs/'stop-watcher').touch()
+            watcher.wait(timeout=20)
+            if watcher.returncode != 0:
+                raise RuntimeError('Bootstrap process observer failed')
+            (logs/'process-watch.json').rename(logs/'bootstrap-process-watch.json')
+            (logs/'stop-watcher').unlink()
+            bootstrap_source = root/'bootstrap-source'
+            source.rename(bootstrap_source)
+            watcher = subprocess.Popen([str(bootstrap_source/'venv/bin/python'), str(HERE/'watch_processes.py'), str(bootstrap_source), str(logs)], env=env, cwd=bootstrap_source)
+            run([sys.executable, HERE/'full_migration.py', source, bootstrap_source, installed, logs], root, timeout=3900)
+            evidence['fullMigration'] = json.loads((logs/'full-migration.json').read_text())
+        else:
+            evidence['fullMigration'] = 'not-run: candidate installer scope is Apple Silicon'
         run([python, HERE/'storage_native.py', source, root, logs], source, timeout=180)
         evidence['nativeStorageAudit'] = json.loads((logs/'storage-native.json').read_text())
         run(['node', HERE/'startup.mjs', source, installed/'Contents/MacOS/Hermes', root, logs], source, timeout=480)

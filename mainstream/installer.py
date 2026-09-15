@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 COMMIT = 'f13a87e610611ce6d9fd82bff8c2d2a642312183'
 ORIGIN = 'https://github.com/NousResearch/hermes-agent.git'
 TILE_KEYS = ('hermes.desktop.sessionTiles.v1', 'hermes.desktop.sessionTiles.v2')
+_command_log = None
 
 
 class Refusal(Exception):
@@ -129,11 +130,17 @@ def run(args, cwd=None, env=None):
     # Never echo subprocess output: package/git hooks can contain secrets.
     try:
         result = subprocess.run([str(a) for a in args], cwd=cwd, env=env,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3600)
+    except subprocess.TimeoutExpired:
+        raise Refusal('Command timed out; keep the private migration backup for diagnosis.') from None
     except OSError:
         raise Refusal('Required executable unavailable.') from None
+    if _command_log is not None:
+        with _command_log.open('a') as log:
+            log.write('\nCOMMAND: '+repr([str(a) for a in args])+'\n'+result.stdout+'\n'+result.stderr)
     if result.returncode:
-        raise Refusal('A prerequisite/build/verification command failed (output withheld to protect credentials).')
+        where = ' Private diagnostic log: '+str(_command_log) if _command_log else ''
+        raise Refusal('A prerequisite/build/verification command failed (output withheld to protect credentials).'+where)
     return result.stdout.strip()
 
 
@@ -257,6 +264,7 @@ def audit_storage(root, userdata, backup):
 
 
 def install(userdata, app, confirmed=False):
+    global _command_log
     initial = preflight(userdata, app)
     root = Path.home()/'.hermes/hermes-agent'
     if root.exists():
@@ -270,6 +278,7 @@ def install(userdata, app, confirmed=False):
     no_symlinks(backups)
     backups.mkdir(parents=True, exist_ok=True, mode=0o700)
     backup = Path(tempfile.mkdtemp(prefix='migration-', dir=backups))
+    _command_log = backup/'commands.log'
     shutil.copytree(userdata, backup/'userData', symlinks=True)
     # Config and OAuth remain untouched; full backup covers .env/auth/profile files too.
     for name in ('config.yaml', '.env', 'auth.json', 'profiles'):

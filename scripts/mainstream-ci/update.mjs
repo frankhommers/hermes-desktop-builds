@@ -53,7 +53,17 @@ try {
   app=await _electron.launch({executablePath:binary, env:vanillaEnv, timeout:90000});
   let page=await app.firstWindow({timeout:90000});
   await page.waitForFunction(()=>!!window.hermesDesktop?.updates, null, {timeout:90000});
-  const check=await page.evaluate(()=>window.hermesDesktop.updates.check({force:true}));
+  let check;
+  const checks=[];
+  for(let attempt=0; attempt<4; attempt++) {
+    check=await page.evaluate(()=>window.hermesDesktop.updates.check({force:true}));
+    checks.push(check);
+    fs.writeFileSync(path.join(logs,'official-update-check-attempts.json'),JSON.stringify(checks,null,2));
+    const sharedRunnerRateLimit=check.error==='fetch-failed' && /HTTP (403|429)/.test(check.message||'');
+    if(!sharedRunnerRateLimit || attempt===3) break;
+    // Real upstream API only; no synthesized success or updater monkeypatch.
+    await sleep(60000 * 2**attempt);
+  }
   fs.writeFileSync(path.join(logs,'official-update-check.json'),JSON.stringify(check,null,2));
   assert.equal(check.supported,true);
   assert.equal(check.hermesRoot,source);
