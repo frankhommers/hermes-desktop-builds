@@ -40,7 +40,7 @@ try:
                 subcommand = _hermes_holder_subcommand(command)
                 gateway = looks_like_gateway_command_line(command)
                 direct_agent = any(Path(token).name in {'run_agent.py', 'cli.py'} and str(source) in token for token in argv)
-                if gateway or direct_agent or subcommand in {'serve', 'dashboard', 'gateway', 'chat'}:
+                if gateway or direct_agent or subcommand in {'serve', 'dashboard', 'chat'}:
                     violations[proc.pid] = {'pid':proc.pid, 'entry':subcommand or ('gateway' if gateway else 'direct-agent')}
             except (psutil.NoSuchProcess, psutil.ZombieProcess):
                 continue

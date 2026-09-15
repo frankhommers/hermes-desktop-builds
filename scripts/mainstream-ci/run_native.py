@@ -41,6 +41,7 @@ def initial_evidence(sha, arch):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
+    parser.add_argument('--update-cycle', action='store_true', help='Use clean disposable runner home to exercise LaunchServices relaunch')
     args = parser.parse_args()
     if platform.system() != 'Darwin' or os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('This build proof runs only on disposable GitHub Actions macOS runners')
@@ -49,9 +50,31 @@ def main():
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
     logs = root/'evidence'; logs.mkdir()
     env = isolated_env(root, os.environ)
-    Path(env['HOME']).mkdir()
+    # Intel cryptography has no wheel at this pin. Reuse the runner's actual
+    # Rust toolchain binaries, not rustup shims tied to the old HOME. Cargo's
+    # cache/config still stays within our isolated HOME; no user credentials.
+    rustc = shutil.which('rustc')
+    if rustc:
+        probe = subprocess.run([rustc, '--print', 'sysroot'], capture_output=True, text=True, timeout=20)
+        if probe.returncode == 0:
+            rust_bin = Path(probe.stdout.strip())/'bin'
+            if (rust_bin/'cargo').is_file():
+                env['PATH'] = str(rust_bin) + os.pathsep + env['PATH']
+    if args.update_cycle:
+        # These are the EPHEMERAL ACTIONS RUNNER's canonical paths, never a
+        # person's Mac. A real open/LaunchServices restart must not depend on
+        # inherited HERMES_* environment, which launchd does not preserve.
+        runner_home = Path(os.environ['HOME']).resolve()
+        canonical_state = runner_home/'.hermes'
+        canonical_ui = runner_home/'Library/Application Support/Hermes'
+        if canonical_state.exists() or canonical_ui.exists():
+            raise RuntimeError('Refusing canonical-runner proof over existing Hermes data')
+        env['HOME'] = str(runner_home)
+        env['HERMES_HOME'] = str(canonical_state)
+        env['HERMES_DESKTOP_USER_DATA_DIR'] = str(canonical_ui)
+    Path(env['HOME']).mkdir(exist_ok=True)
     Path(env['HERMES_HOME']).mkdir()
-    Path(env['HERMES_DESKTOP_USER_DATA_DIR']).mkdir()
+    Path(env['HERMES_DESKTOP_USER_DATA_DIR']).mkdir(parents=True)
     source = Path(env['HERMES_HOME'])/'hermes-agent'
     evidence = initial_evidence(SOURCE_COMMIT, platform.machine())
     counter = 0
@@ -92,8 +115,13 @@ def main():
         if stamp['commit'] != SOURCE_COMMIT or stamp.get('distribution') or stamp.get('dirty'):
             raise RuntimeError('Native stamp must prove clean official source and no community provider')
         evidence['installStamp'] = stamp
+        run([python, HERE/'storage_native.py', source, root, logs], source, timeout=180)
+        evidence['nativeStorageAudit'] = json.loads((logs/'storage-native.json').read_text())
         run(['node', HERE/'startup.mjs', source, installed/'Contents/MacOS/Hermes', root, logs], source, timeout=480)
         evidence['nativeStartup'] = json.loads((logs/'startup.json').read_text())
+        if args.update_cycle:
+            run(['node', HERE/'update.mjs', source, installed/'Contents/MacOS/Hermes', logs], source, timeout=2400)
+            evidence['officialUpdateCycle'] = json.loads((logs/'official-update-cycle.json').read_text())
         tracked = subprocess.check_output(['git', 'status', '--porcelain', '-uno'], cwd=source, env=env, text=True)
         evidence['trackedChangesAfterBuild'] = tracked
         if tracked.strip():

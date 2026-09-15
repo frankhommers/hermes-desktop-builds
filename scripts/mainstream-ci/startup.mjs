@@ -11,7 +11,8 @@ const [source, binary, root, logs] = process.argv.slice(2);
 assert(source && binary && root && logs);
 const require = createRequire(path.join(source, 'apps/desktop/package.json'));
 const {_electron} = require('playwright');
-const userData = path.join(root, 'user-data');
+const userData = process.env.HERMES_DESKTOP_USER_DATA_DIR;
+assert(userData && process.env.HERMES_HOME);
 let dialCount = 0;
 const outage = net.createServer(socket => { dialCount++; socket.destroy(); });
 await new Promise((resolve, reject) => { outage.once('error', reject); outage.listen(0, '127.0.0.1', resolve); });
@@ -34,7 +35,7 @@ try {
     const paths = await app.evaluate(({app}) => ({packaged: app.isPackaged, userData: app.getPath('userData'), hermesHome: process.env.HERMES_HOME}));
     assert.equal(paths.packaged, true);
     assert.equal(paths.userData, userData);
-    assert.equal(paths.hermesHome, path.join(root, 'home/.hermes'));
+    assert.equal(paths.hermesHome, process.env.HERMES_HOME);
     const saved = await page.evaluate(() => window.hermesDesktop.connections.list());
     assert.equal(saved.primary, remoteId);
     assert.equal(saved.launchMode, 'primary');

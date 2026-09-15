@@ -1,0 +1,134 @@
+# One-time official Hermes Desktop migration (candidate)
+
+**Not yet native-Mac accepted or published.** Linux tests verify safety helpers;
+they do not prove the Electron storage origin, native build, Finder launch,
+Gatekeeper, real remote authentication, or a subsequent official update.
+
+This installs a real, unmodified official Git checkout on `main` at initial
+commit `f13a87e610611ce6d9fd82bff8c2d2a642312183`, tracking `origin/main` from
+`https://github.com/NousResearch/hermes-agent.git`, at
+`~/.hermes/hermes-agent`. It creates `venv`, installs the project's **base**
+Python dependencies, and runs `venv/bin/hermes desktop --force-build --build-only`.
+The official app/updater and source build artifacts are retained. Later updates
+belong exclusively to the official in-app source updater and can grow the Python
+dependencies to official `.[all]`. No custom updater/feed, persistent patch,
+Homebrew command, setup wizard, gateway installation, or app launch is used.
+
+## Scope and prerequisites
+
+- Existing **Apple Silicon macOS** Hermes Electron client, closed during migration.
+- Python >=3.11,<3.14 with `venv`/pip; Xcode Command Line Tools (git/clang).
+- Node `^22.22.0 || ^24.11.0 || >=26.0.0`; npm `<11.10.0 || >=11.17.0`.
+  Install prerequisites yourself first. Keep Node/npm available after migration;
+  prefer a stable standard `/usr/local/bin`, `/opt/homebrew/bin`, or
+  `~/.hermes/node/bin` installation discoverable by the official updater. A
+  transient activated NVM shell alone is **not native Finder acceptance**.
+- Existing writable `/Applications/Hermes.app` and its writable parent (or pass
+  `--app "$HOME/Applications/Hermes.app"` for an existing user-local app).
+- Existing userData must be `~/Library/Application Support/Hermes`.
+  Custom/exported `--user-data` paths are refused: reading a different directory
+  does not establish the unmodified app's saved Finder-launch routing.
+- No Hermes launchd plist or loaded registration, including stopped/unloaded
+  registrations. The migrator refuses these; it never uninstalls a service.
+- No `HERMES_*` environment overrides, no symlinked managed paths, no root/sudo.
+- An existing source directory must already be a clean real clone at the exact
+  initial revision and official origin/main. An existing venv is refused, not
+  overlaid. Move/review conflicting installations manually with backups; this
+  installer does not reset or erase an existing source installation.
+
+In the **old app**, save/authenticate the VPS as the **machine-global Remote**
+connection and matching registry primary. Select **Primary gateway** startup,
+not Last used. Remove legacy per-profile connection overrides through Settings.
+Close any local or ambiguously owned restored session/Bot tiles and quit the app.
+An opaque Chromium `Local Storage` directory is normal and is **not rejected**.
+
+## Use
+
+Keep this directory's files together and double-click `Install.command`.
+The terminal remains open on success/failure. Type `INSTALL` to consent.
+Alternatively:
+
+```sh
+python3.12 mainstream/installer.py --preflight-only
+python3.12 mainstream/installer.py
+```
+
+`--preflight-only` is read-only but does **not** claim restored Chromium scopes
+have been inspected: that inspection needs the Electron dependency installed by
+the build. `--yes` consents to the same installation/backups without a prompt;
+it does not enable deleting data. No production installation is authorized by
+this repository containing the tool.
+
+## Data preservation and restore audit
+
+Original userData, cookies, OAuth token storage and encrypted saved connection
+credentials are never rewritten, decrypted, printed or cleared. Before installing,
+the tool makes a private (0700 parent) full userData backup plus existing
+`.hermes/config.yaml`, `.env`, `auth.json`, and `profiles`. Backups may contain
+secrets and should stay private. Subprocess output is suppressed because tools
+can echo credential material; errors report only the failed stage category.
+
+`storage-audit.cjs` uses the newly installed Electron dependency and a **private
+copy** of userData, never the live profile. It loads only a blank local HTML page,
+blocks HTTP(S)/WebSocket traffic, has no preload/Node renderer access, and never
+loads Hermes code or starts its backend. It reads only these actual upstream
+restore keys:
+
+- `hermes.desktop.sessionTiles.v1`
+- `hermes.desktop.sessionTiles.v2` (including `__bots_workspace__`)
+
+The validator rejects explicit local routes, unknown connection owners and
+legacy tiles with ambiguous owner scope. Remote-owned tiles and all unrelated
+preferences/auth remain intact. A refusal asks you to close the offending tiles
+in the existing app and quit before retrying. There is no `localStorage.clear`,
+no synthetic `restore.json` contract, and no automatic data cleanup.
+
+Source anchors at the pinned revision: `src/store/session-states.ts:792-910`
+contains the tile serialization/restore formats; `src/store/session.ts:74-139`
+scopes last navigation by profile and connection; Electron `window-state.ts` is
+geometry-only; secondary window ownership is a runtime query parameter
+(`src/store/windows.ts`). Packaged renderer URLs use `file://`
+(`electron/main.ts:14835-14840`). **The copy/blank-file storage-origin read must
+still be demonstrated on native macOS with a seeded real Chromium database.**
+Do not promote an empty-read result to acceptance without that native fixture.
+
+## Swap, recovery, and future ownership
+
+The build tree remains in the canonical source for official updater discovery.
+The app is copied with `ditto` into a same-parent staging directory, ad-hoc signed,
+and verified with `codesign --verify --deep --strict` before and after renaming.
+The old app is kept next to the destination as `Hermes.pre-mainstream-*.app`.
+If the post-swap verification fails, the old app is renamed back automatically.
+Ad-hoc signing is **not** Developer ID signing or notarization; quarantine is not
+silently stripped and native Gatekeeper acceptance is outstanding.
+
+On an interrupted/failed build, source/venv and private backups are intentionally
+retained for diagnosis; there is no destructive automatic source cleanup. A retry
+will refuse the existing venv until reviewed. On manual rollback, keep both apps,
+close all Hermes processes, move the new app aside and rename the retained old
+app to its former name. Settings were not changed, so normally do not restore
+userData. If restoring a backup is necessary, keep the present data too and only
+restore with the app fully closed. Do not delete source/venv while relying on
+the official updater.
+
+The app is **not automatically opened** after installation. Remote-primary plus
+no services means *no local autostart under the audited configuration*, not hard
+OFF: deliberate local selection, changed/lost routing, or future upstream behavior
+can start a local backend. No permanent runtime policy is installed.
+
+## Verification / release gate
+
+```sh
+python3 -m unittest discover -s mainstream -p 'test_*.py' -v
+node --check mainstream/storage-audit.cjs
+bash -n mainstream/Install.command
+```
+
+Required native acceptance before delivery: actual clean build and stable
+Finder-context prerequisites; seeded storage-copy audit that detects local tiles
+and preserves remote tiles/auth; authenticated VPS HTTP/WebSocket/chat; process
+and listening-socket capture across first start, roster/Bots refresh, VPS outage,
+sleep/reconnect; an actual advancing official update across two real revisions,
+source/app replacement and relaunch; signature/quarantine/LaunchServices and
+failed-swap rollback. Verify OAuth remains usable and the old app/config backups
+remain intact. No Linux fixture substitutes for these gates.

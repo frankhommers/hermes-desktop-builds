@@ -19,7 +19,9 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s scripts/mainstream-ci -v
-      - run: node --check scripts/mainstream-ci/startup.mjs
+      - run: python3 -m unittest discover -s mainstream -v
+      - run: node --check mainstream/storage-audit.cjs && bash -n mainstream/Install.command
+      - run: node --check scripts/mainstream-ci/startup.mjs && node --check scripts/mainstream-ci/update.mjs && node --check scripts/mainstream-ci/storage-seed.cjs
   native:
     needs: contracts
     strategy:
@@ -44,7 +46,7 @@ jobs:
           node-version: '22.22.2'
           architecture: ${{ matrix.arch }}
       - name: Build official app and exercise remote-outage startup
-        run: python3 scripts/mainstream-ci/run_native.py --root "$RUNNER_TEMP/mainstream-proof"
+        run: python3 scripts/mainstream-ci/run_native.py --root "$RUNNER_TEMP/mainstream-proof" --update-cycle
       - name: Evidence (not a release-ready receipt)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
