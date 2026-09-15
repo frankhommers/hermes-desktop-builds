@@ -21,7 +21,7 @@ class PackageTests(unittest.TestCase):
                     self.assertEqual(z.read('Hermes-mainstream/'+name), (p.REPO/'mainstream'/name).read_bytes())
             cask = (a.parent/(p.TOKEN+'.rb')).read_text()
             self.assertIn(f'sha256 "{sha}"', cask)
-            self.assertIn(p.PUBLIC_URL, cask)
+            self.assertIn(p.PUBLIC_URL, cask.replace('#{version}', p.VERSION))
             self.assertIn('auto_updates true', cask)
             self.assertNotIn('app "Hermes.app"', cask)
 

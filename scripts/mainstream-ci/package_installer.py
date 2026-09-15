@@ -39,13 +39,14 @@ def cask_text(sha, url=PUBLIC_URL):
         raise ValueError('Invalid SHA256')
     if not (url == PUBLIC_URL or url.startswith('file:///')) or any(c in url for c in ('"', '\n', '#', '\\')):
         raise ValueError('Only immutable release URL or local native fixture allowed')
+    cask_url = url.replace(VERSION, '#{version}') if url == PUBLIC_URL else url
     return f'''# frozen_string_literal: true
 
 cask "{TOKEN}" do
   version "{VERSION}"
   sha256 "{sha}"
 
-  url "{url}"
+  url "{cask_url}"
   name "Hermes Desktop Mainstream"
   desc "One-time migration to the official in-app Desktop updater"
   homepage "https://github.com/frankhommers/hermes-desktop-builds"
