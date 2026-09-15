@@ -225,15 +225,23 @@ def reserved_versions(api):
         release_tags.add(tag)
         require(type(release.get('draft')) is bool and type(release.get('prerelease')) is bool,
                 'Missing release visibility flags')
-        versions.add(app_version(tag))
+        if not is_mainstream_installer_tag(tag):
+            versions.add(app_version(tag))
     tags = set()
     for record in paginated(api, 'tags'):
         tag = record.get('name')
-        parsed = app_version(tag)
         require(tag not in tags, 'Duplicate tag during pagination; retry discovery')
         tags.add(tag)
-        versions.add(parsed)
+        if not is_mainstream_installer_tag(tag):
+            versions.add(app_version(tag))
     return versions
+
+
+def is_mainstream_installer_tag(tag):
+    # The one-time installer has a separate, explicit version domain. All
+    # other unknown tags still fail closed; never normalize malformed tags.
+    return (isinstance(tag, str) and len(tag) <= 90 and
+            re.fullmatch(r'mainstream-v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', tag) is not None)
 
 
 def app_version(tag):
