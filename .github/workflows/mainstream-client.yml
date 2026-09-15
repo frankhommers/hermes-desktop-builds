@@ -52,6 +52,9 @@ jobs:
         with:
           node-version: '22.22.2'
           architecture: ${{ matrix.arch }}
+      - name: Update native Homebrew for cask pin/trust support
+        if: matrix.arch == 'arm64'
+        run: brew update
       - name: Build official app and exercise remote-outage startup
         run: python3 scripts/mainstream-ci/run_native.py --root "$RUNNER_TEMP/mainstream-proof" --update-cycle
       - name: Evidence (not a release-ready receipt)

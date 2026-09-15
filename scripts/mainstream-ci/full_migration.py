@@ -46,6 +46,7 @@ def main():
         return result.stdout.strip()
     # Start from the genuine published Homebrew client, not a fake receipt.
     app.rename(app.with_name('Hermes.bootstrap.app'))
+    command([brew, 'trust', 'frankhommers/tap'], 'brew-trust-legacy')
     command([brew, 'tap', 'frankhommers/tap'], 'brew-tap-legacy')
     command([brew, 'install', '--cask', 'frankhommers/tap/hermes-desktop', '--appdir='+str(app.parent)], 'brew-install-legacy')
     old_app_before = file_hashes(app)
@@ -54,6 +55,8 @@ def main():
     archive, sha = package(payload)
     command([brew, 'tap-new', 'hermes-ci/bootstrap'], 'brew-tap-fixture')
     tap = Path(command([brew, '--repository', 'hermes-ci/bootstrap'], 'brew-fixture-path'))
+    command(['git', '-C', tap, 'remote', 'add', 'origin', 'https://github.com/hermes-ci/homebrew-bootstrap'], 'brew-fixture-origin')
+    command([brew, 'trust', 'hermes-ci/bootstrap'], 'brew-trust-fixture')
     (tap/'Casks').mkdir(exist_ok=True)
     cask = tap/'Casks'/(TOKEN+'.rb')
     cask.write_text(cask_text(sha))
