@@ -16,7 +16,8 @@ Python dependencies, and runs `venv/bin/hermes desktop --force-build --build-onl
 The official app/updater and source build artifacts are retained. Later updates
 belong exclusively to the official in-app source updater and can grow the Python
 dependencies to official `.[all]`. No custom updater/feed, persistent patch,
-Homebrew command, setup wizard, gateway installation, or app launch is used.
+setup wizard, gateway installation, or app launch is used. The Homebrew entrypoint
+only installs prerequisites and pins the legacy community cask once.
 
 ## Scope and prerequisites
 
@@ -47,6 +48,37 @@ Close any local or ambiguously owned restored session/Bot tiles and quit the app
 An opaque Chromium `Local Storage` directory is normal and is **not rejected**.
 
 ## Use
+
+### Initial installation through Homebrew
+
+Once the checksum-pinned release and tap entry are published:
+
+```sh
+brew install --cask frankhommers/tap/hermes-desktop-mainstream
+```
+
+This command performs the migration itself; it does not merely download an
+installer that needs another manual command. The supported starting point is
+an existing Apple Silicon Hermes.app with the saved remote configuration above.
+The cask requires macOS Sequoia or newer (the native tested OS baseline), installs
+Node and Python 3.12, and builds the unmodified official client without launching it.
+For another existing application folder pass `--appdir="$HOME/Applications"`.
+
+If the legacy `frankhommers/tap/hermes-desktop` cask is installed, it is **pinned**
+before migration so `brew upgrade` cannot overwrite the official client later.
+A failed migration restores its previous pin state. Keep that cask pinned; do
+not reinstall it. It retains its old uninstall receipt: uninstalling that legacy
+cask still removes Hermes.app. Nothing is silently deleted or forgotten.
+
+The new bootstrap cask uses `auto_updates true`, has no `app` artifact and does
+not manage app updates. Keep its receipt installed so Homebrew retains the
+Python/Node dependencies. Its uninstall hook does not delete the app or settings,
+but Homebrew autoremove may remove dependencies if no other formula needs them.
+Use **Hermes's in-app updater** for every later app update, not `brew upgrade`.
+This is an initial Homebrew install followed by mainstream updates, not a custom
+update channel. It is a migration route, not fresh-account onboarding.
+
+### Direct installer alternative
 
 Keep this directory's files together and double-click `Install.command`.
 The terminal remains open on success/failure. Type `INSTALL` to consent.

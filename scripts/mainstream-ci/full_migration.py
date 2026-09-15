@@ -36,7 +36,31 @@ def main():
         (userdata/name).chmod(0o600)
     before = file_hashes(userdata)
     vanilla = {k:v for k,v in os.environ.items() if not k.startswith('HERMES_')}
-    install = subprocess.run([sys.executable,str(REPO/'mainstream/installer.py'),'--yes','--app',str(app)],env=vanilla, timeout=3600, capture_output=True,text=True)
+    vanilla.update(HOMEBREW_NO_AUTO_UPDATE='1', HOMEBREW_NO_ANALYTICS='1', HOMEBREW_NO_ENV_HINTS='1')
+    brew = shutil.which('brew')
+    assert brew, 'Native Homebrew required'
+    def command(args, label, timeout=900):
+        result = subprocess.run([str(x) for x in args], env=vanilla, capture_output=True, text=True, timeout=timeout)
+        (logs/(label+'.log')).write_text(result.stdout+'\n'+result.stderr)
+        assert result.returncode == 0, label+': '+result.stdout+'\n'+result.stderr
+        return result.stdout.strip()
+    # Start from the genuine published Homebrew client, not a fake receipt.
+    app.rename(app.with_name('Hermes.bootstrap.app'))
+    command([brew, 'tap', 'frankhommers/tap'], 'brew-tap-legacy')
+    command([brew, 'install', '--cask', 'frankhommers/tap/hermes-desktop', '--appdir='+str(app.parent)], 'brew-install-legacy')
+    old_app_before = file_hashes(app)
+    from package_installer import package, cask_text, TOKEN
+    payload = logs.parent/'homebrew-payload'
+    archive, sha = package(payload)
+    command([brew, 'tap-new', 'hermes-ci/bootstrap'], 'brew-tap-fixture')
+    tap = Path(command([brew, '--repository', 'hermes-ci/bootstrap'], 'brew-fixture-path'))
+    (tap/'Casks').mkdir(exist_ok=True)
+    cask = tap/'Casks'/(TOKEN+'.rb')
+    cask.write_text(cask_text(sha))
+    command([brew, 'style', '--cask', 'hermes-ci/bootstrap/'+TOKEN], 'brew-style')
+    command([brew, 'audit', '--cask', 'hermes-ci/bootstrap/'+TOKEN], 'brew-audit')
+    cask.write_text(cask_text(sha, archive.as_uri()))
+    install = subprocess.run([brew, 'install', '--cask', 'hermes-ci/bootstrap/'+TOKEN, '--appdir='+str(app.parent)],env=vanilla, timeout=3900, capture_output=True,text=True)
     (logs/'full-installer.log').write_text(install.stdout+'\n'+install.stderr)
     for backup in (Path.home()/'.hermes/mainstream-backups').glob('migration-*'):
         log = backup/'commands.log'
@@ -49,10 +73,27 @@ def main():
     assert (source/'.git').is_dir() and (source/'venv/bin/hermes').exists()
     old_stamp=json.loads((old_apps[0]/'Contents/Resources/install-stamp.json').read_text())
     stamp=json.loads((app/'Contents/Resources/install-stamp.json').read_text())
-    assert stamp['commit']==old_stamp['commit'], 'Both genuine source builds start at audited revision'
-    assert not stamp.get('distribution')
+    from package_installer import PUBLIC_URL
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('candidate_installer', REPO/'mainstream/installer.py')
+    candidate = importlib.util.module_from_spec(spec); spec.loader.exec_module(candidate)
+    assert stamp['commit'] == candidate.COMMIT
+    assert file_hashes(old_apps[0]) == old_app_before, 'Old app backup must be byte-preserved'
+    assert not stamp.get('distribution') and not stamp.get('dirty')
+    pinned = command([brew, 'list', '--cask', '--pinned'], 'brew-pins-after').splitlines()
+    assert 'hermes-desktop' in pinned, 'Old Homebrew update path must be pinned'
+    info = json.loads(command([brew, 'info', '--cask', '--json=v2', 'hermes-ci/bootstrap/'+TOKEN], 'brew-info-after'))
+    assert info['casks'][0]['installed'] and info['casks'][0]['auto_updates'] is True
+    # Isolate the cask's uninstall artifacts from Homebrew's optional dependency
+    # autoremove: Python/Node are required by the handed-over official updater.
+    installed_hashes = file_hashes(app)
+    vanilla['HOMEBREW_NO_AUTOREMOVE'] = '1'
+    command([brew, 'uninstall', '--cask', 'hermes-ci/bootstrap/'+TOKEN], 'brew-uninstall-bootstrap')
+    assert file_hashes(app) == installed_hashes and (source/'venv/bin/hermes').is_file()
     result={'installerExitCode':0,'originalUserDataBytesPreserved':True,'oldAppRetained':True,
             'realCanonicalClone':True,'updaterEntrypointPresent':True,'stamp':stamp,
+            'homebrewInstall':True,'legacyCaskPinned':True,'bootstrapUninstallPreservedApp':True,
+            'archiveSha256':sha,'publicArchiveUrl':PUBLIC_URL,'oldStamp':old_stamp,
             'fixture':'synthetic HTTPS remote, no real account or authenticated VPS chat'}
     (logs/'full-migration.json').write_text(json.dumps(result,indent=2)+'\n')
 

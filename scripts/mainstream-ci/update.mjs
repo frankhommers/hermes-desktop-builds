@@ -44,6 +44,7 @@ function runningAppPid(excluding) {
   return null;
 }
 const vanillaEnv={...process.env};
+vanillaEnv.PATH='/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
 delete vanillaEnv.HERMES_HOME;
 delete vanillaEnv.HERMES_DESKTOP_USER_DATA_DIR;
 let app;
