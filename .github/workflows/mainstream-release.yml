@@ -1,0 +1,29 @@
+name: Publish mainstream installer
+on:
+  workflow_dispatch:
+    inputs:
+      native_run:
+        description: Successful main-branch Mainstream client native proof run
+        type: string
+        required: true
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-mainstream-installer
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s scripts/mainstream-ci -v
+      - name: Validate native Homebrew receipt and publish exact artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: python3 scripts/mainstream-ci/publish_installer.py --run "$NATIVE_RUN"
