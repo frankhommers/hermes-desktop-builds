@@ -36,6 +36,9 @@ def validate_evidence(evidence, watch, sha):
                  'originalUserDataBytesPreserved', 'oldAppRetained', 'realCanonicalClone', 'updaterEntrypointPresent'):
         if not isinstance(migration, dict) or migration.get(flag) is not True:
             raise ValueError('Missing migration gate: '+flag)
+    plist_gate = migration.get('launchdPlistRegression')
+    if not isinstance(plist_gate, dict) or any(plist_gate.get(k) is not True for k in ('knownHermesBlocked', 'protectedFileRaisesPermissionError', 'unrelatedPlistsPreserved')):
+        raise ValueError('Native third-party/known-Hermes plist regression proof missing')
     if migration.get('archiveSha256') != sha or migration.get('publicArchiveUrl') != PUBLIC_URL:
         raise ValueError('Native Homebrew tested a different release payload')
     if not isinstance(cycle, dict) or cycle.get('status') != 'advanced' or cycle.get('automaticRelaunchObserved') is not True or cycle.get('remoteRoutePreserved') is not True:

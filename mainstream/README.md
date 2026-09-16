@@ -1,12 +1,21 @@
-# One-time official Hermes Desktop migration (candidate)
+# One-time official Hermes Desktop migration
 
-**Candidate: full-installer native acceptance is still running.** The official
-build, seeded Chromium storage-copy audit, outage startup, advancing source/app
-update and automatic LaunchServices relaunch passed on Apple Silicon and Intel
-in [native run 35015384911](https://github.com/frankhommers/hermes-desktop-builds/actions/runs/35015384911).
-That run is not proof of the entire migrator, real VPS authentication, Finder
-toolchain discovery on a personal Mac, or Gatekeeper acceptance. Subsequent
-native staging evidence also confirms preserved signing entitlements/identity.
+For a published archive, the attached `native-verification.json` binds the exact
+installer bytes to the completed native Homebrew migration and official-update
+checks. Source-branch changes remain candidates until those gates pass. Synthetic
+CI does not prove real-account VPS authentication, personal-Mac Finder toolchain
+discovery, sleep/reconnect or Gatekeeper acceptance.
+
+## Installer 1.0.1: third-party launchd files
+
+An invalid `battery.plist` or unreadable vendor plist no longer blocks migration
+merely because the file cannot be parsed. Such non-Hermes-named files produce a
+warning with the filename and error type; they are not repaired, removed or
+chmodded. Their contents are **not claimed to be audited** when unreadable.
+Hermes-named registrations still block even if unreadable or stopped, as do
+Hermes references in readable files and loaded launchd services. The installer
+also continues checking running Hermes processes. This checks normal Hermes
+startup/update behavior; it is not a general audit of every third-party service.
 
 This installs a real, unmodified official Git checkout on `main` at initial
 commit `f13a87e610611ce6d9fd82bff8c2d2a642312183`, tracking `origin/main` from

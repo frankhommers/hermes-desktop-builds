@@ -7,7 +7,8 @@ import publish_installer as p
 def fixture():
     migration: dict[str, object] = {flag:True for flag in ('homebrewInstall','legacyCaskPinned','bootstrapUninstallPreservedApp',
                                       'originalUserDataBytesPreserved','oldAppRetained','realCanonicalClone','updaterEntrypointPresent')}
-    migration.update(archiveSha256='a'*64, publicArchiveUrl=p.PUBLIC_URL)
+    migration.update(archiveSha256='a'*64, publicArchiveUrl=p.PUBLIC_URL,
+                     launchdPlistRegression={k:True for k in ('knownHermesBlocked','protectedFileRaisesPermissionError','unrelatedPlistsPreserved')})
     evidence = {'arch':'arm64','watcherExitCode':0,'trackedChangesAfterBuild':'','fullMigration':migration,
                 'officialUpdateCycle':{'status':'advanced','automaticRelaunchObserved':True,'remoteRoutePreserved':True,
                                        'before':'b'*40,'after':'c'*40,'stamp':{'commit':'c'*40}},

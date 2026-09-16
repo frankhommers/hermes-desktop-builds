@@ -150,19 +150,38 @@ def check_closed_and_services(home):
         low = line.lower()
         if ('hermes.app/contents/' in low or re.search(r'(?:hermes|hermes_cli\.main)\s+(?:serve|dashboard|gateway\s+run|chat)(?:\s|$)', low)):
             raise Refusal('Quit Hermes Desktop and local Hermes services before migration.')
-    for folder in (home/'Library/LaunchAgents', Path('/Library/LaunchAgents'), Path('/Library/LaunchDaemons')):
-        if not folder.exists():
-            continue
-        for p in folder.glob('*.plist'):
-            try:
-                data = plistlib.loads(p.read_bytes())
-            except (OSError, ValueError, plistlib.InvalidFileException):
-                raise Refusal('Cannot inspect a launchd plist; resolve permissions/format first.') from None
-            if 'hermes' in p.name.lower() or 'hermes' in str(data).lower():
-                raise Refusal('Hermes launchd registration exists, even if stopped. Review/uninstall it yourself; no services were removed.')
+    inspect_launchd_plists((home/'Library/LaunchAgents', Path('/Library/LaunchAgents'), Path('/Library/LaunchDaemons')))
     for domain in (f'gui/{os.getuid()}', 'system'):
         if 'hermes' in run(['/bin/launchctl', 'print', domain]).lower():
             raise Refusal('Loaded Hermes launchd registration found; no services were removed.')
+
+
+def inspect_launchd_plists(folders):
+    """Inspect Hermes registrations, not the health of every third-party plist.
+
+    Official updater-managed service filenames remain blocking even unreadable.
+    Loaded-service/process checks run separately. Opaque third-party files are
+    reported, never repaired, chmodded or assumed to have been fully audited.
+    """
+    for folder in folders:
+        if not folder.exists():
+            continue
+        for p in sorted(folder.glob('*.plist')):
+            if 'hermes' in p.name.lower():
+                raise Refusal('Hermes launchd registration exists, even if stopped: '+str(p)+'. No services were removed.')
+            raw = None
+            try:
+                raw = p.read_bytes()
+                data = plistlib.loads(raw)
+            except (PermissionError, FileNotFoundError, ValueError, plistlib.InvalidFileException) as error:
+                if raw is not None and b'hermes' in raw.lower():
+                    raise Refusal('Hermes reference in an invalid launchd plist: '+str(p)+'. Review this registration first.') from None
+                print('Warning: could not inspect non-Hermes-named plist: '+str(p)+' ('+type(error).__name__+'). Left unchanged; Hermes and loaded-service checks remain active.', file=sys.stderr)
+                continue
+            except OSError as error:
+                raise Refusal('Cannot inspect launchd plist: '+str(p)+' ('+type(error).__name__+', errno='+str(error.errno)+'). No files were changed.') from None
+            if 'hermes' in str(data).lower():
+                raise Refusal('Hermes launchd reference found: '+str(p)+'. No services were removed.')
 
 
 def preflight(userdata, app):
