@@ -6,7 +6,7 @@ import re
 import zipfile
 
 REPO = Path(__file__).resolve().parents[2]
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 TOKEN = 'hermes-desktop-mainstream'
 ASSET = f'Hermes-mainstream-{VERSION}.zip'
 TAG = f'mainstream-v{VERSION}'

@@ -63,8 +63,16 @@ def main():
     command([brew, 'style', '--cask', 'hermes-ci/bootstrap/'+TOKEN], 'brew-style')
     command([brew, 'audit', '--cask', 'hermes-ci/bootstrap/'+TOKEN], 'brew-audit')
     cask.write_text(cask_text(sha, archive.as_uri()))
-    install = subprocess.run([brew, 'install', '--cask', 'hermes-ci/bootstrap/'+TOKEN, '--appdir='+str(app.parent)],env=vanilla, timeout=3900, capture_output=True,text=True)
-    (logs/'full-installer.log').write_text(install.stdout+'\n'+install.stderr)
+    sys.path.insert(0, str(REPO/'mainstream'))
+    from launchd_fixtures import launchd_regression_fixtures
+    with launchd_regression_fixtures(logs.parent) as launchd_receipt:
+        install = subprocess.run([brew, 'install', '--cask', 'hermes-ci/bootstrap/'+TOKEN, '--appdir='+str(app.parent)],env=vanilla, timeout=3900, capture_output=True,text=True)
+        (logs/'full-installer.log').write_text(install.stdout+'\n'+install.stderr)
+        assert install.returncode == 0, install.stdout+'\n'+install.stderr
+        output = install.stdout+'\n'+install.stderr
+        assert 'battery.plist' in output and 'InvalidFileException' in output
+        assert 'com.maintain.PurgeInactiveMemory.plist' in output and 'PermissionError' in output
+    (logs/'launchd-plist-regression.json').write_text(json.dumps(launchd_receipt, indent=2)+'\n')
     for backup in (Path.home()/'.hermes/mainstream-backups').glob('migration-*'):
         log = backup/'commands.log'
         if log.exists():
@@ -96,6 +104,7 @@ def main():
     result={'installerExitCode':0,'originalUserDataBytesPreserved':True,'oldAppRetained':True,
             'realCanonicalClone':True,'updaterEntrypointPresent':True,'stamp':stamp,
             'homebrewInstall':True,'legacyCaskPinned':True,'bootstrapUninstallPreservedApp':True,
+            'launchdPlistRegression':launchd_receipt,
             'archiveSha256':sha,'publicArchiveUrl':PUBLIC_URL,'oldStamp':old_stamp,
             'fixture':'synthetic HTTPS remote, no real account or authenticated VPS chat'}
     (logs/'full-migration.json').write_text(json.dumps(result,indent=2)+'\n')
