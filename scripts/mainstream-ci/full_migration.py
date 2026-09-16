@@ -45,11 +45,15 @@ def main():
         assert result.returncode == 0, label+': '+result.stdout+'\n'+result.stderr
         return result.stdout.strip()
     # Start from the genuine published Homebrew client, not a fake receipt.
-    app.rename(app.with_name('Hermes.bootstrap.app'))
+    bootstrap_app = logs.parent/'bootstrap-app.noindex'
+    bootstrap_app.mkdir(mode=0o700)
+    app.rename(bootstrap_app/'Hermes.app')
     command([brew, 'trust', 'frankhommers/tap'], 'brew-trust-legacy')
     command([brew, 'tap', 'frankhommers/tap'], 'brew-tap-legacy')
     command([brew, 'install', '--cask', 'frankhommers/tap/hermes-desktop', '--appdir='+str(app.parent)], 'brew-install-legacy')
     old_app_before = file_hashes(app)
+    from launcher_backup import register_legacy_fixture, verify_launcher_backup
+    register_legacy_fixture(app, command)
     from package_installer import package, cask_text, TOKEN
     payload = logs.parent/'homebrew-payload'
     archive, sha = package(payload)
@@ -79,17 +83,16 @@ def main():
             shutil.copy2(log, logs/(backup.name+'-commands.log'))
     assert install.returncode == 0, install.stdout+'\n'+install.stderr
     assert file_hashes(userdata) == before, 'Installer modified original userData'
-    old_apps=list(app.parent.glob('Hermes.pre-mainstream-*.app'))
-    assert len(old_apps)==1, 'Old app must be retained'
+    # A retained backup in Applications is a failure, not preservation proof.
     assert (source/'.git').is_dir() and (source/'venv/bin/hermes').exists()
-    old_stamp=json.loads((old_apps[0]/'Contents/Resources/install-stamp.json').read_text())
     stamp=json.loads((app/'Contents/Resources/install-stamp.json').read_text())
     from package_installer import PUBLIC_URL
     import importlib.util
     spec = importlib.util.spec_from_file_location('candidate_installer', REPO/'mainstream/installer.py')
     candidate = importlib.util.module_from_spec(spec); spec.loader.exec_module(candidate)
     assert stamp['commit'] == candidate.COMMIT
-    assert file_hashes(old_apps[0]) == old_app_before, 'Old app backup must be byte-preserved'
+    old_app, launcher_receipt = verify_launcher_backup(app, logs, command, file_hashes, old_app_before, candidate)
+    old_stamp = json.loads((old_app/'Contents/Resources/install-stamp.json').read_text())
     assert not stamp.get('distribution') and not stamp.get('dirty')
     pinned = command([brew, 'list', '--cask', '--pinned'], 'brew-pins-after').splitlines()
     assert 'hermes-desktop' in pinned, 'Old Homebrew update path must be pinned'
@@ -104,7 +107,7 @@ def main():
     result={'installerExitCode':0,'originalUserDataBytesPreserved':True,'oldAppRetained':True,
             'realCanonicalClone':True,'updaterEntrypointPresent':True,'stamp':stamp,
             'homebrewInstall':True,'legacyCaskPinned':True,'bootstrapUninstallPreservedApp':True,
-            'launchdPlistRegression':launchd_receipt,
+            'launchdPlistRegression':launchd_receipt,'launcherBackupRegression':launcher_receipt,
             'archiveSha256':sha,'publicArchiveUrl':PUBLIC_URL,'oldStamp':old_stamp,
             'fixture':'synthetic HTTPS remote, no real account or authenticated VPS chat'}
     (logs/'full-migration.json').write_text(json.dumps(result,indent=2)+'\n')

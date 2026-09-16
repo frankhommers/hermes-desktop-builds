@@ -6,7 +6,7 @@ import re
 import zipfile
 
 REPO = Path(__file__).resolve().parents[2]
-VERSION = '1.0.1'
+VERSION = '1.0.2'
 TOKEN = 'hermes-desktop-mainstream'
 ASSET = f'Hermes-mainstream-{VERSION}.zip'
 TAG = f'mainstream-v{VERSION}'
@@ -76,7 +76,8 @@ cask "{TOKEN}" do
     Builds unmodified official source locally; installs Python/Node prerequisites.
     No local agent autostart, service registration or automatic app launch.
     Existing sources/services or unsafe saved routing cause a refusal, not deletion.
-    The old app and private user-data backups are retained.
+    The old app is retained in a private .noindex backup, not beside Hermes.app.
+    User-data backups are retained; launcher-specific caches may need refreshing.
     An installed frankhommers/tap/hermes-desktop cask is pinned, not uninstalled.
     Keep it pinned: future app updates belong to the official in-app updater.
     Its uninstall still removes Hermes.app; this bootstrap's uninstall removes only its receipt.
