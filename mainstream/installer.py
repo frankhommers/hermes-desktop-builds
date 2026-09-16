@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 COMMIT = 'f13a87e610611ce6d9fd82bff8c2d2a642312183'
 ORIGIN = 'https://github.com/NousResearch/hermes-agent.git'
+LSREGISTER = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
 TILE_KEYS = ('hermes.desktop.sessionTiles.v1', 'hermes.desktop.sessionTiles.v2')
 _command_log = None
 
@@ -208,7 +209,7 @@ def preflight(userdata, app):
     check_closed_and_services(home)
     config, registry = read_json(userdata/'connection.json'), read_json(userdata/'connections.json')
     validate_saved_route(config, registry)
-    for name in ('git', 'node', 'npm', 'codesign', 'ditto', 'xattr', 'open', 'clang'):
+    for name in ('git', 'node', 'npm', 'codesign', 'ditto', 'xattr', 'open', 'clang', LSREGISTER):
         if not shutil.which(name):
             raise Refusal('Missing required tool: '+name+' (install prerequisites first).')
     run(['/usr/bin/xcode-select', '-p'])
@@ -231,20 +232,85 @@ def stage_app(source, stage):
     verify_app(stage)
 
 
-def swap_app(stage, app, backup, verify):
-    for p in (stage, app, backup):
+def check_backup_destination(app, backup):
+    """Refuse unsafe/cross-volume rollback placement before touching the app."""
+    for p in (app, backup):
         no_symlinks(p)
     if backup.exists():
-        raise Refusal('Backup destination already exists.')
+        raise Refusal('Backup destination already exists: '+str(backup))
+    if app == backup or app in backup.parents or backup in app.parents:
+        raise Refusal('App and backup paths must be separate.')
+    if not app.is_dir() or not backup.parent.is_dir():
+        raise Refusal('Existing app and backup parent directories are required.')
+    if len({app.stat().st_dev, app.parent.stat().st_dev, backup.parent.stat().st_dev}) != 1:
+        raise Refusal('App and private backup must be on the same filesystem; old app was not moved. Choose an app location on the home volume.')
+
+
+def update_launch_services(app, *, unregister=False):
+    """Touch only this exact bundle; never reset databases or launch the app."""
+    no_symlinks(app)
+    run([LSREGISTER, '-u' if unregister else '-f', app])
+
+
+def swap_app(stage, app, backup, verify, *, registration=None):
+    """Rename intact bundles, rolling back on verification/registration errors.
+
+    Optional registration(path, *, unregister=False) keeps the four-argument
+    filesystem-only API usable by native signature/rollback tests.
+    """
+    no_symlinks(stage)
+    check_backup_destination(app, backup)
+    if any(a == b or a in b.parents or b in a.parents
+           for a, b in ((stage, app), (stage, backup))):
+        raise Refusal('Stage, app and backup paths must be separate.')
+    if not stage.is_dir() or stage.stat().st_dev != app.stat().st_dev:
+        raise Refusal('Staged app must be a directory on the same filesystem.')
     verify(stage)
-    app.rename(backup)
+    # Verification can take time; recheck paths before any registration/move.
+    no_symlinks(stage)
+    check_backup_destination(app, backup)
+    old_moved = new_moved = registration_attempted = False
     try:
+        if registration is not None:
+            registration(app, unregister=True)
+        app.rename(backup)
+        old_moved = True
+        if app.exists() or app.is_symlink():
+            raise Refusal('App destination appeared during swap; retained backup: '+str(backup))
         stage.rename(app)
+        new_moved = True
         verify(app)
-    except BaseException:
-        if app.exists():
+        if registration is not None:
+            registration_attempted = True
+            registration(app)
+    except BaseException as error:
+        registration_errors = []
+        if registration_attempted and registration is not None:
+            try:
+                registration(app, unregister=True)
+            except BaseException as cleanup_error:
+                registration_errors.append(cleanup_error)
+        # Never let a LaunchServices error prevent filesystem rollback. Keep
+        # both bundles on disk even when recovery itself needs manual review.
+        if new_moved:
+            no_symlinks(app)
+            no_symlinks(stage)
+            if stage.exists():
+                raise Refusal('Rollback stage is occupied; old app retained at '+str(backup)) from error
             app.rename(stage)
-        backup.rename(app)
+        if old_moved:
+            no_symlinks(app)
+            no_symlinks(backup)
+            if app.exists():
+                raise Refusal('Rollback destination is occupied; old app retained at '+str(backup)) from error
+            backup.rename(app)
+        if registration is not None:
+            try:
+                registration(app)
+            except BaseException as cleanup_error:
+                registration_errors.append(cleanup_error)
+        if registration_errors:
+            raise Refusal('Old app restored at '+str(app)+', but LaunchServices recovery failed; review the private diagnostic log. Installation did not complete.') from error
         raise
 
 
@@ -297,6 +363,11 @@ def install(userdata, app, confirmed=False):
     no_symlinks(backups)
     backups.mkdir(parents=True, exist_ok=True, mode=0o700)
     backup = Path(tempfile.mkdtemp(prefix='migration-', dir=backups))
+    old = backup/'old-app.noindex/Hermes.app'
+    old.parent.mkdir(mode=0o700)
+    # A rename preserves the original signature, metadata and bundle links.
+    # Refuse cross-device backup placement before copying data or building.
+    check_backup_destination(app, old)
     _command_log = backup/'commands.log'
     shutil.copytree(userdata, backup/'userData', symlinks=True)
     # Config and OAuth remain untouched; full backup covers .env/auth/profile files too.
@@ -333,13 +404,13 @@ def install(userdata, app, confirmed=False):
     audit_storage(root, userdata, backup)
     if preflight(userdata, app) != initial:
         raise Refusal('Saved routing changed during build; refusing swap.')
-    stage_dir = Path(tempfile.mkdtemp(prefix='.hermes-migration-', dir=app.parent))
+    stage_dir = Path(tempfile.mkdtemp(prefix='.hermes-migration-', suffix='.noindex', dir=app.parent))
     stage = stage_dir/'Hermes.app'
     stage_app(artifacts[0], stage)
-    old = app.parent/('Hermes.pre-mainstream-'+backup.name+'.app')
-    swap_app(stage, app, old, verify_app)
-    print('Installed without launching. Old app retained beside the new app; private backup: '+str(backup))
-    print('Use the official in-app updater thereafter. Native startup/outage/update acceptance is still required.')
+    swap_app(stage, app, old, verify_app, registration=update_launch_services)
+    print('Installed without launching: '+str(app))
+    print('Old app retained privately: '+str(old)+'; data and diagnostic backup: '+str(backup))
+    print('Open the installed app path above and confirm your saved remote connection. Use the official in-app updater thereafter.')
 
 
 def main():

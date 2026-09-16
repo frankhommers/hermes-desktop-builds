@@ -142,23 +142,70 @@ database bytes preserved. This is not a real-account OAuth persistence test.
 ## Swap, recovery, and future ownership
 
 The build tree remains in the canonical source for official updater discovery.
-The app is copied with `ditto` into a same-parent staging directory, preserving
-the official build's signature, entitlements and designated requirement. It is
-verified with `codesign --verify --deep --strict` before and after renaming;
-the migrator never re-signs the bundle.
-The old app is kept next to the destination as `Hermes.pre-mainstream-*.app`.
-If the post-swap verification fails, the old app is renamed back automatically.
+The app is copied with `ditto` into a hidden, same-parent staging directory
+`.hermes-migration-<random>.noindex/Hermes.app`, preserving the official build's
+signature, entitlements and designated requirement. It is verified with
+`codesign --verify --deep --strict` before and after renaming; the migrator never
+re-signs the bundle. A failed stage/swap leaves any staged bundle under that
+hidden `.noindex` directory, not as another top-level application.
+
+The original app is **renamed intact**, not copied/deleted, into this private
+backup layout (both `migration-<random>` and `old-app.noindex` are mode 0700):
+
+```text
+~/.hermes/mainstream-backups/migration-<random>/
+  old-app.noindex/Hermes.app   # original bundle, signature and metadata retained
+  userData/                  # full saved Desktop data backup
+  config.yaml, .env, auth.json, profiles/   # when originally present
+  commands.log               # private subprocess diagnostics, when commands run
+```
+
+No new `Hermes.pre-mainstream-*.app` is left beside the installed app. Existing
+backups from older installer runs are not searched, moved or deleted. The app,
+its parent and private backup parent must share a filesystem; a cross-device
+layout is refused **before building or copying userData**, while the original
+app stays in place. The swap rechecks filesystem placement, refuses colliding
+backup destinations and symlinked managed paths, and never falls back to a
+copy/delete transaction. Internal bundle symlinks are retained unchanged.
+
+Immediately before moving the old app, the installer calls macOS's
+`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`
+with `-u` and the exact app path. After the new app passes verification, it uses
+`-f` with that same installed path. These are scoped application registrations
+([flag reference](https://ss64.com/mac/lsregister.html)), **not** service/autostart
+registrations; no app is launched and no LaunchServices database, Dock, Finder
+or Spotlight cache is reset. Hidden/`.noindex` placement avoids ordinary
+rediscovery of the rollback bundle, but is not a guarantee about every launcher
+or existing cached shortcut. Success output names both the installed app path
+and exact retained old-app path; native bundle-ID resolution remains a release
+gate, not something a Linux fixture proves.
+
+Verification, rename or registration failures trigger rollback. A failed old-app
+unregistration stops before moving it. A failed new-app registration also attempts
+to unregister the new bundle, restores the old app, and re-registers that exact
+restored path. Registration cleanup errors never prevent filesystem rollback
+and never report successful installation. If filesystem recovery is itself
+blocked, keep the backup and stage for manual review; neither bundle is deleted.
 Ad-hoc signing is **not** Developer ID signing or notarization; quarantine is not
 silently stripped and native Gatekeeper acceptance is outstanding.
 
+The helper API remains `swap_app(stage, app, backup, verify)`, a filesystem-only
+operation with an existing backup parent and absent backup target. Its optional
+keyword `registration=update_launch_services` enables the installer's native
+registration transaction. A callback has signature
+`registration(app, *, unregister=False)` and must raise on failure.
+`check_backup_destination(app, backup)` performs the pre-build path/device check;
+`update_launch_services(app, *, unregister=False)` wraps the exact-path command.
+
 On an interrupted/failed build, source/venv and private backups are intentionally
 retained for diagnosis; there is no destructive automatic source cleanup. A retry
-will refuse the existing venv until reviewed. On manual rollback, keep both apps,
-close all Hermes processes, move the new app aside and rename the retained old
-app to its former name. Settings were not changed, so normally do not restore
-userData. If restoring a backup is necessary, keep the present data too and only
-restore with the app fully closed. Do not delete source/venv while relying on
-the official updater.
+will refuse the existing venv until reviewed. On manual rollback, close all Hermes
+processes, preserve the new app outside application discovery locations, and move
+`old-app.noindex/Hermes.app` back to the exact former installed path. Review its
+LaunchServices registration before relying on a cached shortcut. Settings were
+not changed, so normally do not restore userData. If restoring a backup is
+necessary, keep the present data too and only restore with the app fully closed.
+Do not delete source/venv while relying on the official updater.
 
 The app is **not automatically opened** after installation. Remote-primary plus
 no services means *no local autostart under the audited configuration*, not hard

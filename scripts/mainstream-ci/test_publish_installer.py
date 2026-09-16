@@ -8,7 +8,10 @@ def fixture():
     migration: dict[str, object] = {flag:True for flag in ('homebrewInstall','legacyCaskPinned','bootstrapUninstallPreservedApp',
                                       'originalUserDataBytesPreserved','oldAppRetained','realCanonicalClone','updaterEntrypointPresent')}
     migration.update(archiveSha256='a'*64, publicArchiveUrl=p.PUBLIC_URL,
-                     launchdPlistRegression={k:True for k in ('knownHermesBlocked','protectedFileRaisesPermissionError','unrelatedPlistsPreserved')})
+                     launchdPlistRegression={k:True for k in ('knownHermesBlocked','protectedFileRaisesPermissionError','unrelatedPlistsPreserved')},
+                     launcherBackupRegression={k:True for k in ('singleAppInInstallDirectory','privateNoindexBackup',
+                                                                'backupBytesAndSignaturePreserved','launchServicesResolvesInstalledApp',
+                                                                'nativeFailedSwapRestoresOldApp')})
     evidence = {'arch':'arm64','watcherExitCode':0,'trackedChangesAfterBuild':'','fullMigration':migration,
                 'officialUpdateCycle':{'status':'advanced','automaticRelaunchObserved':True,'remoteRoutePreserved':True,
                                        'before':'b'*40,'after':'c'*40,'stamp':{'commit':'c'*40}},
@@ -20,6 +23,15 @@ def fixture():
 
 
 class PublicationTests(unittest.TestCase):
+    def test_launcher_regression_flags_must_be_true(self):
+        evidence, watch = fixture()
+        for key in evidence['fullMigration']['launcherBackupRegression']:
+            for value in (None, False, 1, 'true'):
+                bad = copy.deepcopy(evidence)
+                bad['fullMigration']['launcherBackupRegression'][key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    p.validate_evidence(bad, watch, 'a'*64)
+
     def test_only_exact_successful_main_workflow_can_publish(self):
         run = {'repository':{'full_name':p.REPO},'head_repository':{'full_name':p.REPO},'head_branch':'main',
                'head_sha':'d'*40,'event':'workflow_dispatch','conclusion':'success','status':'completed',

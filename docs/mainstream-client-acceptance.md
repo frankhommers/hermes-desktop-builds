@@ -31,6 +31,9 @@ This is a replacement direction for the community Homebrew updater, not another 
 6. Client-specific apply performs the real official handoff, obtains a newer official revision, replaces the running app bundle, and relaunches it.
 7. After update/relaunch, remote routing survives and local backend remains off.
 8. Installed app identity, source revision, update receipt, process evidence, and test limitations are recorded. Mock/DI tests do not count as native end-to-end proof.
+9. The installed application directory contains no extra launcher-visible rollback `.app`. Retain the original bundle with unchanged bytes/signature in a private `.noindex` backup outside application discovery.
+10. Seed the native OS launcher with the old installation before migration, then verify NSWorkspace resolves the installed bundle afterward without the test repairing registration. This is not proof of third-party launcher/Dock cache behavior. Never reset their global databases.
+11. Inject a post-swap verification failure on native macOS with real signed bundles; require original bytes and signature restored, with staged new data retained. Refuse cross-filesystem atomic-backup moves before changing the app; do not substitute a lossy copy/delete fallback.
 
 ## Initial evidence
 

@@ -39,6 +39,11 @@ def validate_evidence(evidence, watch, sha):
     plist_gate = migration.get('launchdPlistRegression')
     if not isinstance(plist_gate, dict) or any(plist_gate.get(k) is not True for k in ('knownHermesBlocked', 'protectedFileRaisesPermissionError', 'unrelatedPlistsPreserved')):
         raise ValueError('Native third-party/known-Hermes plist regression proof missing')
+    launcher_gate = migration.get('launcherBackupRegression')
+    if not isinstance(launcher_gate, dict) or any(launcher_gate.get(k) is not True for k in (
+            'singleAppInInstallDirectory', 'privateNoindexBackup', 'backupBytesAndSignaturePreserved',
+            'launchServicesResolvesInstalledApp', 'nativeFailedSwapRestoresOldApp')):
+        raise ValueError('Native launcher selection/private backup/rollback proof missing')
     if migration.get('archiveSha256') != sha or migration.get('publicArchiveUrl') != PUBLIC_URL:
         raise ValueError('Native Homebrew tested a different release payload')
     if not isinstance(cycle, dict) or cycle.get('status') != 'advanced' or cycle.get('automaticRelaunchObserved') is not True or cycle.get('remoteRoutePreserved') is not True:
@@ -90,7 +95,8 @@ def main():
                    'native':evidence, 'processObserver':watch,
                    'limitations':['synthetic remote fixtures, not real-account VPS authentication',
                                   'ad-hoc signed, not Developer ID signed or Apple notarized',
-                                  'no local autostart under saved remote-primary state, not hard OFF']}
+                                  'no local autostart under saved remote-primary state, not hard OFF',
+                                  'NSWorkspace resolution verified; third-party launcher/Dock caches not covered']}
         (package/'native-verification.json').write_text(json.dumps(receipt, indent=2)+'\n')
         notes = root/'notes.md'
         notes.write_text(f'''One-time Homebrew migration to the unmodified official Hermes client/updater.
@@ -99,9 +105,9 @@ Apple Silicon, macOS Sequoia or newer; requires an existing closed Hermes.app wi
 Install through `brew install --cask frankhommers/tap/{TOKEN}` after the tap is updated.
 Homebrew installs Python/Node and the client once; all subsequent app updates use the official in-app updater. The legacy community cask is pinned to avoid overwriting it.
 
-Verified: actual Homebrew migration, preserved original data/old app/signature, seeded Chromium restore audit, remote-outage startup, genuine official source/app advance and automatic restart with a healthy process observer. Receipt: {run['html_url']}.
+Verified: actual Homebrew migration, preserved original data/old app/signature, private noindex rollback backup rather than a duplicate in Applications, native failed-swap rollback, OS launcher resolution to the installed app, seeded Chromium restore audit, remote-outage startup, genuine official source/app advance and automatic restart with a healthy process observer. Receipt: {run['html_url']}.
 
-No production Mac/VPS was changed. Synthetic CI does not prove personal-account OAuth/chat, sleep/reconnect, or personal-Mac Gatekeeper approval. Ad-hoc signing is not notarization. Deliberate local use or changed/lost settings may start a local agent. Keep the source, Python and Node for future updates (which may install `.[all]`).
+No production Mac/VPS was changed. Synthetic CI does not prove personal-account OAuth/chat, sleep/reconnect, personal-Mac Gatekeeper approval, or third-party launcher/Dock cache behavior. Ad-hoc signing is not notarization. Deliberate local use or changed/lost settings may start a local agent. Keep the source, Python and Node for future updates (which may install `.[all]`).
 ''')
         assets = sorted(package.iterdir())
         # Never reuse or overwrite a published release; an exact draft can resume.
