@@ -1,9 +1,9 @@
 {
   "repository": "NousResearch/hermes-agent",
-  "commit": "345cd2b057a452236de401d3534b8502a7465e8d",
-  "version": "0.17.2",
-  "revision": 2,
+  "commit": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3",
+  "version": "0.17.6",
+  "revision": 1,
   "node": "22.22.2",
-  "releaseTag": "v2026.9.14",
-  "releaseId": 388531783
+  "releaseTag": "v2026.9.21",
+  "releaseId": 393186039
 }
