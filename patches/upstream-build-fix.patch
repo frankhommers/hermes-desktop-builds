@@ -1,0 +1,13 @@
+diff --git a/apps/desktop/src/components/onboarding-chat/cards/setup.tsx b/apps/desktop/src/components/onboarding-chat/cards/setup.tsx
+index 83e20003213b0b814478cf97f8edf41d1f9c8a9b..d0bdaccfb977809997797d24a02d27339228abf4 100644
+--- a/apps/desktop/src/components/onboarding-chat/cards/setup.tsx
++++ b/apps/desktop/src/components/onboarding-chat/cards/setup.tsx
+@@ -5,7 +5,7 @@
+  */
+ 
+ import { useStore } from '@nanostores/react'
+-import { Puzzle } from 'lucide-react'
++import { IconPuzzle as Puzzle } from '@tabler/icons-react'
+ import { useEffect, useMemo, useState } from 'react'
+ 
+ import { useSessionView } from '@/app/chat/session-view'
