@@ -134,6 +134,10 @@ class SourcePatchTests(unittest.TestCase):
             'homebrew-client-updater.patch', 'apps/desktop/src/store/voice-prefs.test.ts'))
         self.assertFalse(_patch_path_is_approved(
             'homebrew-client-updater.patch', 'apps/desktop/electron/preload.ts'))
+        self.assertTrue(_patch_path_is_approved(
+            'upstream-build-fix.patch', 'apps/desktop/src/components/onboarding-chat/cards/setup.tsx'))
+        self.assertFalse(_patch_path_is_approved(
+            'upstream-build-fix.patch', 'apps/desktop/src/components/desktop-install-overlay.tsx'))
         self.assertFalse(_patch_path_is_approved(
             'anything-else.patch', 'apps/desktop/electron/main.ts'))
 

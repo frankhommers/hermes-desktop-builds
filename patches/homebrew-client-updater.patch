@@ -329,13 +329,13 @@ index 0000000000000000000000000000000000000000..414007bdead1d6b395dda595f1bb6788
 +  }
 +}
 diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
-index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b162b3526 100644
+index 2820a547ca61b6504cf3bc24721af3f2ef3a8579..25ef4722ba4e77fe19f57592d2fdb447a647f065 100644
 --- a/apps/desktop/electron/main.ts
 +++ b/apps/desktop/electron/main.ts
-@@ -395,6 +395,15 @@ import {
-   windowOpacityOptions
- } from './translucency'
- import { branchTipApiUrl, cacheIsFresh, compareApiUrl, githubRepoSlug, parseCompare } from './update-api-check'
+@@ -469,6 +469,15 @@ import {
+   resolveBehindLocally
+ } from './update-api-check'
+ import { updateCheckAgent } from './update-api-proxy'
 +import {
 +  type CommunityHomebrewConfig,
 +  communityHomebrewConfig,
@@ -348,7 +348,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
  import { waitForUpdateClearance } from './update-gate'
  import { readLiveUpdateMarker, updateHandoffConflict, writeUpdateMarker } from './update-marker'
  import { isOfficialSshRemote, OFFICIAL_REPO_HTTPS_URL } from './update-remote'
-@@ -743,6 +752,8 @@ function loadInstallStamp() {
+@@ -822,6 +831,8 @@ function loadInstallStamp() {
            builtAt: parsed.builtAt || null,
            dirty: Boolean(parsed.dirty),
            source: parsed.source || null,
@@ -357,7 +357,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
            path: p
          })
        }
-@@ -1344,7 +1355,7 @@ if (IS_WINDOWS) {
+@@ -1456,7 +1467,7 @@ if (IS_WINDOWS) {
  // the seed here just covers the first open and any non-menu invocation path.
  app.setAboutPanelOptions({
    applicationName: APP_NAME,
@@ -366,7 +366,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
    copyright: 'Copyright © 2026 Nous Research'
  })
  
-@@ -3195,6 +3206,53 @@ async function resolveHealedBranch(updateRoot, branch) {
+@@ -3338,6 +3349,53 @@ async function resolveHealedBranch(updateRoot, branch) {
    return 'main'
  }
  
@@ -420,7 +420,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
  // Passive checks never touch git's network side. Every client used to `git
  // fetch` twice per half hour; across the install base that was tens of
  // millions of pack negotiations a day against one repo (GitHub flagged it).
-@@ -3204,6 +3262,11 @@ async function resolveHealedBranch(updateRoot, branch) {
+@@ -3347,6 +3405,11 @@ async function resolveHealedBranch(updateRoot, branch) {
  // inside applyUpdates. `force` (menu item, Settings "Check now") skips the
  // cache; the renderer's background poller never passes it.
  async function checkUpdates({ force = false }: { force?: boolean } = {}) {
@@ -432,7 +432,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
    const updateRoot = resolveUpdateRoot()
    let { branch } = readDesktopUpdateConfig()
    const gitDir = path.join(updateRoot, '.git')
-@@ -4011,11 +4074,112 @@ async function releaseBackendLock(updateRoot, tag) {
+@@ -4191,11 +4254,112 @@ async function releaseBackendLock(updateRoot, tag) {
  //
  // Detection (checkUpdates / commit changelog / "N behind") stays in the UI;
  // only this apply action changed.
@@ -545,7 +545,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
    updateInFlight = true
  
    try {
-@@ -17526,11 +17690,19 @@ ipcMain.handle('hermes:updates:branch:set', async (_event, name) => {
+@@ -18250,11 +18414,19 @@ ipcMain.handle('hermes:updates:branch:set', async (_event, name) => {
    return { branch }
  })
  
@@ -570,7 +570,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
  function resolveHermesVersion() {
    try {
      const root = resolveUpdateRoot()
-@@ -17564,7 +17736,7 @@ async function detectRendererSkew() {
+@@ -18288,7 +18460,7 @@ async function detectRendererSkew() {
    return detectBundleSkew(INSTALL_STAMP, runGit, resolveUpdateRoot())
  }
  
@@ -579,7 +579,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
  // just before showing it, so an in-place `hermes update` is reflected without
  // an app restart. macOS only — `showAboutPanel()` is a no-op elsewhere, and the
  // other platforms don't use this menu item.
-@@ -17573,8 +17745,8 @@ function showAboutPanelFresh() {
+@@ -18297,8 +18469,8 @@ function showAboutPanelFresh() {
      app.setAboutPanelOptions({
        applicationName: APP_NAME,
        applicationVersion: skew.outOfSync
@@ -590,7 +590,7 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
        copyright: 'Copyright © 2026 Nous Research'
      })
      app.showAboutPanel()
-@@ -17585,7 +17757,7 @@ ipcMain.handle('hermes:version', async () => {
+@@ -18309,7 +18481,7 @@ ipcMain.handle('hermes:version', async () => {
    const skew = await detectRendererSkew()
  
    return {
@@ -600,10 +600,10 @@ index 24ca25e8176290a3c46a6ad65f68b4dbb844df3e..278e8e7ff2d5d83d6ecf02b30d9c3c1b
      nodeVersion: process.versions.node,
      platform: process.platform,
 diff --git a/apps/desktop/electron/ssh-connection.ts b/apps/desktop/electron/ssh-connection.ts
-index 9a11a19378991b5c5ca326ff39686988e7b03c3f..e26d3c78efdd215a5638c921c9ce339959516c38 100644
+index 09880e7bf18918b67f4bf894b6323435803b75bf..b4a072d5179e1d7e18d3ebfc572acc37a48ea3df 100644
 --- a/apps/desktop/electron/ssh-connection.ts
 +++ b/apps/desktop/electron/ssh-connection.ts
-@@ -164,12 +164,11 @@ function redactSecrets(text) {
+@@ -171,12 +171,11 @@ function redactSecrets(text) {
  // across reconnects so ControlMaster reuse works, short so the full path stays
  // under sun_path's 104-byte limit.
  //
@@ -621,7 +621,7 @@ index 9a11a19378991b5c5ca326ff39686988e7b03c3f..e26d3c78efdd215a5638c921c9ce3399
  function controlSocketPath(user, host, port, baseDir?, identity: any = {}) {
    const dir = baseDir || defaultControlDir()
    const keyPathIdentity = path.normalize(String(identity.keyPath || ''))
-@@ -190,13 +189,11 @@ function controlSocketPath(user, host, port, baseDir?, identity: any = {}) {
+@@ -197,13 +196,11 @@ function controlSocketPath(user, host, port, baseDir?, identity: any = {}) {
  }
  
  function defaultControlDir() {
@@ -676,7 +676,7 @@ index 076d5a893e2346ad07f260ef5790b0fb0d9e5831..8d5c79b511c2c5388ef9e1c3e91ae604
  
    mkdirSync(OUT_DIR, { recursive: true })
 diff --git a/apps/desktop/scripts/write-build-stamp.test.mjs b/apps/desktop/scripts/write-build-stamp.test.mjs
-index 53c88e23704c36a7086054725f0e35498fea73e0..cfa71e7682d79ab88290772157a77b736f4a2aa7 100644
+index 7fbc9f60e331bc9ab2b0a176282b502fa73e7b78..87b237ee256c5c417bb9b4105b9c4d8b245a5cf6 100644
 --- a/apps/desktop/scripts/write-build-stamp.test.mjs
 +++ b/apps/desktop/scripts/write-build-stamp.test.mjs
 @@ -8,6 +8,7 @@ import {
@@ -687,7 +687,7 @@ index 53c88e23704c36a7086054725f0e35498fea73e0..cfa71e7682d79ab88290772157a77b73
    resolveStamp
  } from './write-build-stamp.mjs'
  
-@@ -84,3 +85,30 @@ test('resolveStamp falls back when neither CI nor git is available', () => {
+@@ -79,3 +80,30 @@ test('resolveStamp falls back when neither CI nor git is available', () => {
      source: 'fallback'
    })
  })
@@ -719,20 +719,20 @@ index 53c88e23704c36a7086054725f0e35498fea73e0..cfa71e7682d79ab88290772157a77b73
 +  )
 +})
 diff --git a/apps/desktop/src/lib/version-status.test.ts b/apps/desktop/src/lib/version-status.test.ts
-index 0ea94080399b89f318ef998199156d6683bb72fd..49c31aa8c7c996ffc91a987380540892c5460499 100644
+index 50f6dc3bac9a7b8dd409d9b999670bbb3f427a0b..dbb9f30fee1af7073076bddaa18a01c9f452c085 100644
 --- a/apps/desktop/src/lib/version-status.test.ts
 +++ b/apps/desktop/src/lib/version-status.test.ts
-@@ -42,8 +42,8 @@ describe('resolveVersionStatus', () => {
+@@ -42,6 +42,10 @@ describe('resolveVersionStatus', () => {
      expect(status.hasUpdate).toBe(true)
    })
  
--  it('names the client as one of two versions in remote mode', () => {
--    expect(client({ remote: true, version: '0.4.2' }).label).toBe('client v0.4.2')
 +  it('names the Desktop app as one of two versions in remote mode', () => {
 +    expect(client({ remote: true, version: '0.4.2' }).label).toBe('Hermes Desktop v0.4.2')
-   })
- 
++  })
++
    it('falls back to the sha, then to unknown, when there is no version', () => {
+     expect(client({ sha: 'abc1234' }).label).toBe('abc1234')
+     expect(client({ sha: 'abc1234' }).unknown).toBe(false)
 diff --git a/apps/desktop/src/lib/version-status.ts b/apps/desktop/src/lib/version-status.ts
 index 0b292c9f31d94f7b2203726fcf581920d4e61f5d..f6f06a187f9d826eac7c5f14cda5a43fbf772758 100644
 --- a/apps/desktop/src/lib/version-status.ts
@@ -747,10 +747,10 @@ index 0b292c9f31d94f7b2203726fcf581920d4e61f5d..f6f06a187f9d826eac7c5f14cda5a43f
  
    // Commits behind is the precise diff; `(update)` is the fallback for a
 diff --git a/apps/desktop/src/store/voice-prefs.test.ts b/apps/desktop/src/store/voice-prefs.test.ts
-index e59f3775b40baa14cb35cc162c7152fc95a58918..a6611c6943d0684836ad006129563c25158d307d 100644
+index 3cf9c7e94f6ebb3f6c72a2da2e19d9ab78e25816..f5af9b4cfcd832ed85ee7b2256db436434487abe 100644
 --- a/apps/desktop/src/store/voice-prefs.test.ts
 +++ b/apps/desktop/src/store/voice-prefs.test.ts
-@@ -15,7 +15,7 @@ it('keeps the desktop toggle local across config refreshes', async () => {
+@@ -22,7 +22,7 @@ it('keeps the desktop toggle local across config refreshes', async () => {
        localStorage.clear()
        vi.resetModules()
        const prefs = await import('./voice-prefs')
@@ -759,7 +759,7 @@ index e59f3775b40baa14cb35cc162c7152fc95a58918..a6611c6943d0684836ad006129563c25
  
        if (fails) {
          write.mockImplementation(() => {
-@@ -44,7 +44,7 @@ it('migrates the legacy preference once, not on every refresh', async () => {
+@@ -51,7 +51,7 @@ it('migrates the legacy preference once, not on every refresh', async () => {
        localStorage.clear()
        vi.resetModules()
        const prefs = await import('./voice-prefs')
