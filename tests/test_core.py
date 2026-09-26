@@ -56,6 +56,42 @@ class BuildTests(unittest.TestCase):
             result=subprocess.run(['git','rev-parse','--show-toplevel'],cwd=work/'src',env=env,capture_output=True)
             self.assertEqual(result.returncode,0,'Actual source repo remains discoverable')
 
+    def test_windows_permission_exception_line_is_bound_per_commit(self):
+        new_pin = {**PIN, 'commit': 'f97608f178d1ffeca59860195ab7da295f7c8e5f'}
+        old_pin = {**PIN, 'commit': '939e45c91d751fadd94dcd1b873ac3cb44846213'}
+
+        def report(line):
+            message = (
+                'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'
+                '438 !== 493\n\n'
+                '    at D:/a/hermes-desktop-builds/.work/src/apps/desktop/scripts/'
+                f'stage-native-deps.test.mjs:{line}:12\n'
+                '    at file:///D:/a/hermes-desktop-builds/.work/src/node_modules/'
+                '@vitest/runner/dist/index.js:1:1'
+            )
+            return {
+                'numTotalTests': 1,
+                'numFailedTests': 1,
+                'testResults': [{
+                    'name': '/src/scripts/stage-native-deps.test.mjs',
+                    'status': 'failed',
+                    'assertionResults': [{
+                        'fullName': 'darwin staging ships the Swift helper executable and the rewritten windows.js',
+                        'status': 'failed',
+                        'failureMessages': [message],
+                    }],
+                }],
+                'runCompletion': {'reason': 'failed', 'unhandledErrors': []},
+            }
+
+        self.assertFalse(gate_test_report(report(625), new_pin, 1, 'win32')['suiteGreen'])
+        self.assertFalse(gate_test_report(report(597), old_pin, 1, 'win32')['suiteGreen'])
+        for pin, line in ((new_pin, 597), (old_pin, 625), (new_pin, 626)):
+            with self.subTest(commit=pin['commit'], line=line), self.assertRaises(ValueError):
+                gate_test_report(report(line), pin, 1, 'win32')
+        with self.assertRaises(ValueError):
+            gate_test_report(report(625), new_pin, 1, 'linux')
+
     def test_windows_permission_exception_is_platform_and_commit_bound(self):
         message = (
             'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'

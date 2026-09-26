@@ -86,6 +86,12 @@ def run(label, command, cwd, env, logs, allow_failure=False):
     return rc
 
 
+# Exact upstream commit -> reviewed source line of the same assertion. The line
+# moves when upstream edits the test file; each pin is reviewed and bound here.
+WINDOWS_DARWIN_MODE_LINES = {
+    '939e45c91d751fadd94dcd1b873ac3cb44846213': 597,
+    'f97608f178d1ffeca59860195ab7da295f7c8e5f': 625,
+}
 KNOWN_COMMIT = '939e45c91d751fadd94dcd1b873ac3cb44846213'
 WINDOWS_DARWIN_MODE_FIXTURE = (
     'scripts/stage-native-deps.test.mjs',
@@ -95,9 +101,11 @@ WINDOWS_DARWIN_MODE_MESSAGE = (
     'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:',
     '438 !== 493',
 )
-WINDOWS_DARWIN_MODE_STACK = re.compile(
-    r'^at .*[\\/]apps[\\/]desktop[\\/]scripts[\\/]stage-native-deps\.test\.mjs:597:12$'
-)
+def _windows_darwin_mode_stack(line_no):
+    return re.compile(
+        r'^at .*[\\/]apps[\\/]desktop[\\/]scripts[\\/]stage-native-deps\.test\.mjs:'
+        + str(int(line_no)) + r':12$'
+    )
 ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m')
 
 
@@ -105,7 +113,7 @@ def _matches_windows_darwin_mode_fixture(name, assertion, pin, platform):
     messages = assertion.get('failureMessages')
     if not (
         platform == 'win32'
-        and pin['commit'] == KNOWN_COMMIT
+        and pin['commit'] in WINDOWS_DARWIN_MODE_LINES
         and name.endswith('/' + WINDOWS_DARWIN_MODE_FIXTURE[0])
         and assertion.get('fullName') == WINDOWS_DARWIN_MODE_FIXTURE[1]
         and isinstance(messages, list)
@@ -118,7 +126,8 @@ def _matches_windows_darwin_mode_fixture(name, assertion, pin, platform):
         len(lines) >= 3
         and tuple(lines[:2]) == WINDOWS_DARWIN_MODE_MESSAGE
         and all(line.startswith('at ') for line in lines[2:])
-        and any(WINDOWS_DARWIN_MODE_STACK.fullmatch(line) for line in lines[2:])
+        and any(_windows_darwin_mode_stack(WINDOWS_DARWIN_MODE_LINES[pin['commit']]).fullmatch(line)
+                for line in lines[2:])
     )
 
 
