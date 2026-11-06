@@ -200,6 +200,23 @@ def desktop_version(api, sha):
     return package['version']
 
 
+# Since the semver release tags (v0.22.x), upstream commits package.json at this
+# placeholder and its release build injects the tag (scripts/bundles/desktop.py
+# release_version: tag[1:]). Only this exact placeholder defers to the tag.
+UNSTAMPED_VERSION = '0.0.0'
+
+
+def release_desktop_version(api, sha, tag):
+    """Desktop version of an official release: committed, or the tag if unstamped."""
+    exact_tag(tag)
+    version = desktop_version(api, sha)
+    if version != UNSTAMPED_VERSION:
+        return version
+    stamped = tag[1:]
+    require(version_tuple(stamped) > (0, 0, 0), 'Unstamped package needs a nonzero release tag')
+    return stamped
+
+
 def paginated(api, resource):
     rows = []
     for page in range(1, MAX_PAGES + 1):
@@ -352,7 +369,8 @@ def plan_update(api, pin, base_sha):
     if status == 'identical':
         if 'releaseTag' not in pin or release['id'] != pin['releaseId']:
             return candidate, metadata
-        require(desktop_version(api, sha) == pin['version'], 'Pinned package version mismatch')
+        require(release_desktop_version(api, sha, release['tag']) == pin['version'],
+                'Pinned package version mismatch')
         versions = reserved_versions(api)
         current_version = (*version_tuple(pin['version']), pin['revision'])
         if any(version >= current_version for version in versions):
@@ -361,7 +379,7 @@ def plan_update(api, pin, base_sha):
             dispatch, reason = recovery_decision(api, pin, base_sha)
             metadata.update(action='dispatch' if dispatch else 'skip', reason=reason)
         return candidate, metadata
-    version = desktop_version(api, sha)
+    version = release_desktop_version(api, sha, release['tag'])
     numeric = version_tuple(version)
     require(numeric >= version_tuple(pin['version']), 'Refusing application version downgrade')
     versions = reserved_versions(api)
