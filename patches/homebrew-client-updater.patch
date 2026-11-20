@@ -1,9 +1,9 @@
 diff --git a/apps/desktop/electron/community-homebrew-update.test.ts b/apps/desktop/electron/community-homebrew-update.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..ef109617fc68ba5e9211fa2462ac586908bee911
+index 0000000000000000000000000000000000000000..d141e3e8dd2516420bda7baa6be3f63140b5b46a
 --- /dev/null
 +++ b/apps/desktop/electron/community-homebrew-update.test.ts
-@@ -0,0 +1,270 @@
+@@ -0,0 +1,276 @@
 +import assert from 'node:assert/strict'
 +
 +import { test } from 'vitest'
@@ -246,7 +246,13 @@ index 0000000000000000000000000000000000000000..ef109617fc68ba5e9211fa2462ac5869
 +
 +  const installed = { ...stamp, distributionVersion: '0.17.2.2' }
 +  assert.deepEqual(readInstalledCommunityStamp('/App/Contents/Resources', reader(JSON.stringify(installed))), installed)
-+  assert.deepEqual(seen, ['/App/Contents/Resources/install-stamp.json'])
++  // Exactly one read: the sidecar directly inside the running resources path, in the
++  // host's own path spelling (path.join normalises to backslashes on Windows).
++  const sidecar =
++    process.platform === 'win32'
++      ? '\\App\\Contents\\Resources\\install-stamp.json'
++      : '/App/Contents/Resources/install-stamp.json'
++  assert.deepEqual(seen, [sidecar])
 +  assert.equal(readInstalledCommunityStamp('/r', reader('[1]')), null)
 +  assert.equal(readInstalledCommunityStamp('/r', reader('null')), null)
 +  assert.equal(readInstalledCommunityStamp('/r', reader('{')), null)

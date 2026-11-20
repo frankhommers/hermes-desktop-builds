@@ -7,7 +7,11 @@
     },
     {
       "file": "homebrew-client-updater.patch",
-      "sha256": "bc543eae1037ea44e9e02037cbf88abf4952b67d30d4912fbf794b2d0d083ddb"
+      "sha256": "cef213014258382c47c074016fed4661de809001ed15f3724e78232ef4e44235"
+    },
+    {
+      "file": "upstream-hud-fixture-host.patch",
+      "sha256": "4c15d344609aeb6765464f41f9a01ae399793162af475505aa65d60b8ac6ed5b"
     }
   ]
 }

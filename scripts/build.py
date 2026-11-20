@@ -12,6 +12,7 @@ import sys
 import tempfile
 
 from common import provision_pnpm, ROOT, WORK, OUT, load_pin, release_version, archive_name, clean_environment, run, gate_test_report, source_desktop_version
+from common import private_short_root, full_suite_environment, hermes_test_runtime
 from package import digest, native_inventory, inventory, make_archive, unpack_archive
 from macos_signing import verify_bundle, verify_extracted
 from source_patches import apply_patches, verify_source_state
@@ -42,7 +43,7 @@ def main():
     # Upstream (v0.22+) installs JS with the pnpm pinned in pm/lock.json and refuses npm.
     node=shutil.which('node');git=shutil.which('git')
     if not all((node,git)):raise RuntimeError('Node and Git are required')
-    def cmd(name,command,cwd=ROOT,allow_failure=False):return run(name,command,cwd,env,logs,allow_failure)
+    def cmd(name,command,cwd=ROOT,allow_failure=False,run_env=None):return run(name,command,cwd,run_env or env,logs,allow_failure)
     hostnode=subprocess.check_output([node,'-p','process.platform+" "+process.arch+" "+process.versions.node'],env=env,text=True).strip()
     if hostnode!=f'{target} {arch} {pin["node"]}':raise RuntimeError(f'Expected pinned native Node, got {hostnode}')
     print('Native build:',hostnode,flush=True)
@@ -173,8 +174,19 @@ def main():
             if p.is_file():shutil.copyfile(p,logs/('runtime-'+name))
     if target=='linux':
         report=logs/'vitest.json'
-        env['DESKTOP_TEST_RECEIPT']=str(logs/'full-completion.json')
-        rc=cmd('upstream-full-tests',[pnpm,'exec','vitest','run','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)]+reporter,desktop,True)
+        # Upstream's own contract (js-tests.yml via setup-pm): the PM test-environment
+        # interpreter plus real uv on PATH. Packaging-only inputs stay out, and HOME/TMPDIR
+        # are short and private: Linux AF_UNIX paths stop at 108 bytes, and GitHub's
+        # doubled checkout path pushes nested test sockets past it.
+        suite_root=private_short_root()
+        try:
+            test_env=full_suite_environment(env,suite_root)
+            test_env['DESKTOP_TEST_RECEIPT']=str(logs/'full-completion.json')
+            test_env=hermes_test_runtime(src,test_env,suite_root,logs,sys.executable)
+            print('Private short Linux test root:',suite_root,flush=True)
+            rc=cmd('upstream-full-tests',[pnpm,'exec','vitest','run','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)]+reporter,desktop,True,test_env)
+        finally:
+            shutil.rmtree(suite_root,ignore_errors=True)
         data=json.loads(report.read_text());data['runCompletion']=json.loads((logs/'full-completion.json').read_text())
         gate=gate_test_report(data,pin,rc)
         (logs/'test-gate.json').write_text(json.dumps(gate,indent=2)+'\n')

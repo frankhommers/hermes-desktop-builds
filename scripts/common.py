@@ -89,6 +89,100 @@ def clean_environment(work, pin, inherited=None):
     return env
 
 
+# Inputs that only electron-builder/build stamping consume. Upstream tests read
+# them too (channel identity, payload version) and must see an unstamped host.
+PACKAGING_ONLY_ENV = ('HERMES_PAYLOAD_VERSION', 'HERMES_DESKTOP_DISTRIBUTION',
+                      'HERMES_DESKTOP_DISTRIBUTION_VERSION', 'DESKTOP_BUILD_PYTHON',
+                      'DESKTOP_BUILD_LOGS', 'DESKTOP_SIGNING_TEST_SOURCE')
+# Linux sun_path is 108 bytes including NUL. Upstream fixtures nest sockets
+# three directories below os.tmpdir() (vitest.run-tmp.ts adds one more), and
+# ssh-connection keeps ControlPath under HOME only within OpenSSH's 104 bytes.
+SOCKET_BUDGETS = (
+    ('t/vitest-XXXXXX/desktop-gw-XXXXXX/hermes-gw-0123456789abcdef/control.sock', 107),
+    ('h/.hermesmagic-test/desktop-ssh/0123456789abcdef.sock.0123456789abcdef', 104),
+)
+
+
+def private_short_root(parent='/tmp', prefix='hb-'):
+    """A fresh owner-only directory whose path keeps upstream socket fixtures under sun_path."""
+    import stat
+    import tempfile
+    root = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    st = os.lstat(root)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or stat.S_IMODE(st.st_mode) != 0o700:
+        raise RuntimeError(f'Unsafe private test root: {root}')
+    for probe, limit in SOCKET_BUDGETS:
+        if len(os.fsencode(str(root/probe))) > limit:
+            os.rmdir(root)
+            raise RuntimeError(f'Private test root too long for AF_UNIX sockets: {root}')
+    return root
+
+
+def full_suite_environment(env, root):
+    """Test env for the upstream suite: no packaging inputs, short private HOME and temp."""
+    root = Path(root)
+    test = {k: v for k, v in env.items() if k not in PACKAGING_ONLY_ENV}
+    home, tmp = root/'h', root/'t'
+    for p in (home, tmp, home/'.config', home/'.local/share'):
+        p.mkdir(parents=True, exist_ok=True)
+    test.update({
+        'HOME': str(home), 'USERPROFILE': str(home), 'HERMES_HOME': str(home/'.hermes'),
+        'XDG_CONFIG_HOME': str(home/'.config'), 'XDG_DATA_HOME': str(home/'.local/share'),
+        'TMPDIR': str(tmp), 'TMP': str(tmp), 'TEMP': str(tmp),
+    })
+    return test
+
+
+def apply_github_file_commands(env, env_file, path_file):
+    """Apply GITHUB_ENV/GITHUB_PATH as the runner would to the next step: last PATH line first."""
+    env = dict(env)
+    for line in Path(env_file).read_text(encoding='utf-8').splitlines():
+        if not line:
+            continue
+        key, sep, value = line.partition('=')
+        if not sep or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) or '<<' in key:
+            raise ValueError(f'Unsupported GITHUB_ENV command: {line!r}')
+        env[key] = value
+    dirs = [line for line in Path(path_file).read_text(encoding='utf-8').splitlines() if line]
+    if dirs:
+        env['PATH'] = os.pathsep.join(list(reversed(dirs)) + [env['PATH']])
+    return env
+
+
+def hermes_test_runtime(src, env, root, logs, bootstrap, runner=None):
+    """Upstream's supported test interpreter: setup-pm's toolchain + --test-environment phases.
+
+    Mirrors .github/actions/setup-pm (js-tests.yml: extras '[]', test-environment true)
+    for the Python toolchain only; Node/pnpm stay the pin-verified ones on PATH.
+    """
+    runner = runner or run
+    root = Path(root)
+    pm_home, files = root/'pm', root/'gh'
+    files.mkdir(parents=True, exist_ok=True)
+    commands = {name: files/name for name in ('GITHUB_ENV', 'GITHUB_OUTPUT', 'GITHUB_PATH')}
+    for f in commands.values():
+        f.write_text('', encoding='utf-8')
+    setup = str(Path(src)/'scripts/ci/setup_toolchain.py')
+    # The interpreter must come from the exports below, never the build host's.
+    env = {k: v for k, v in env.items() if k not in ('HERMES_PYTHON', 'VIRTUAL_ENV', 'PYTHONPATH')}
+    current = dict(env, **{k: str(v) for k, v in commands.items()})
+    for phase, extra in (('prepare', ['--extras', '[]']), ('install', []),
+                         ('dependencies', ['--extras', '[]', '--test-environment'])):
+        python = bootstrap if phase != 'dependencies' else current.get('HERMES_PYTHON')
+        if not python:
+            raise RuntimeError('Upstream test environment did not export its interpreter')
+        runner('hermes-test-runtime-'+phase, [python, '-S', setup, phase, '--toolchain', 'python',
+                                             '--home', str(pm_home), *extra], src, current, logs)
+        current = apply_github_file_commands(dict(env, **{k: str(v) for k, v in commands.items()}),
+                                             commands['GITHUB_ENV'], commands['GITHUB_PATH'])
+    for key in commands:
+        current.pop(key, None)
+    python = Path(current.get('HERMES_PYTHON', ''))
+    if not current.get('VIRTUAL_ENV') or not python.is_file() or python.parent.parent != Path(current['VIRTUAL_ENV']):
+        raise RuntimeError('Upstream test environment did not export its interpreter')
+    return current
+
+
 def run(label, command, cwd, env, logs, allow_failure=False):
     logs.mkdir(parents=True, exist_ok=True)
     start = time.monotonic()
