@@ -114,7 +114,7 @@ def main():
     if target=='darwin':
         # Delay outer signing until all resources exist. Sign staged native bytes only
         # after upstream beforePack re-stages them, BEFORE ASAR hashes are computed.
-        buildargs+=['-c.mac.identity=null','-c.beforePack='+str(ROOT/'scripts/before-pack-macos.mjs')]
+        buildargs+=['-c.mac.sign=null','-c.beforePack='+str(ROOT/'scripts/before-pack-macos.mjs')]
         env['DESKTOP_BUILD_PYTHON']=sys.executable
         env['DESKTOP_BUILD_LOGS']=str(logs)
     cmd('electron-builder',buildargs,desktop)
