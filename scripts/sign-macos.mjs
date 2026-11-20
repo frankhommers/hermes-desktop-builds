@@ -10,15 +10,17 @@ const machoMagics = new Set(['cffaedfe', 'feedfacf', 'cefaedfe', 'feedface',
 export function signingOptions(source, app) {
   const desktop = path.join(source, 'apps/desktop');
   const pkg = JSON.parse(fs.readFileSync(path.join(desktop, 'package.json')));
+  // Upstream moved packaging config out of package.json into electron-builder.config.cjs;
+  // the entitlement files and devDependencies Electron pin are the source of truth there.
   const unpacked = path.join(app, 'Contents/Resources/app.asar.unpacked') + path.sep;
   const realApp = fs.realpathSync(app);
   return {
     app, platform: 'darwin', type: 'distribution', identity: '-', identityValidation: false,
-    version: pkg.build.electronVersion, strictVerify: true,
+    version: pkg.devDependencies.electron, strictVerify: true,
     preAutoEntitlements: false, preEmbedProvisioningProfile: false,
     optionsForFile(file) {
       return {
-        entitlements: path.resolve(desktop, file === app ? pkg.build.mac.entitlements : pkg.build.mac.entitlementsInherit),
+        entitlements: path.join(desktop, 'electron', file === app ? 'entitlements.mac.plist' : 'entitlements.mac.inherit.plist'),
         hardenedRuntime: true, timestamp: 'none',
       };
     },
@@ -45,8 +47,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const [source, app] = process.argv.slice(2).map(p => path.resolve(p));
   assert(source && app && app.endsWith('.app'));
   const require = createRequire(path.join(source, 'apps/desktop/package.json'));
-  const {signAsync} = require('@electron/osx-sign');
-  await signAsync(signingOptions(source, app));
+  // osx-sign 2.x is ESM and exports sign(); 1.x exported signAsync().
+  const osxSign = await import(pathToFileURL(require.resolve('@electron/osx-sign')).href);
+  await (osxSign.sign ?? osxSign.signAsync)(signingOptions(source, app));
   console.log('Final Mac bundle ad-hoc signed inside-out with upstream entitlements.');
   console.log('No Developer ID, notarization, keychain discovery or security-policy changes.');
 }

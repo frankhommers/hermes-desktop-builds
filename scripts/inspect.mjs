@@ -64,11 +64,13 @@ assert(renderer.includes('Connect to existing Hermes'));
 assert(renderer.includes('No local install will start.'));
 const stamp=JSON.parse(fs.readFileSync(path.join(resources,'install-stamp.json')));
 assert.equal(stamp.commit,pin.commit);assert.equal(stamp.dirty,false);
+// Upstream owns `distribution` (steward field); the community identity is separate.
+assert.equal(stamp.distribution,'desktop-app');
 if(platform==='darwin'){
-  assert.equal(stamp.distribution,'frankhommers-homebrew');
+  assert.equal(stamp.communityDistribution,'frankhommers-homebrew');
   assert.equal(stamp.distributionVersion,distributionVersion);
 }else{
-  assert.equal(stamp.distribution,undefined);
+  assert.equal(stamp.communityDistribution,undefined);
   assert.equal(stamp.distributionVersion,undefined);
 }
 fs.writeFileSync(path.join(logs,'asar.json'),JSON.stringify({platform,arch,files:inventory.length,integrity:'all entries verified',stamp,inventory},null,2)+'\n');

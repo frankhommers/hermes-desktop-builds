@@ -1,10 +1,14 @@
 """Shared pin validation, isolated environment, logs and explicit test gates."""
+import hashlib
+import io
 import json
 from collections import Counter
 import os
 from pathlib import Path
 import re
 import subprocess
+import tarfile
+import urllib.request
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +36,22 @@ def load_pin():
 
 def release_version(pin):
     return f"{pin['version']}.{pin['revision']}"
+
+
+# Since the semver tags (v0.22+) upstream commits apps/desktop/package.json at this
+# placeholder and injects the release version at build time (scripts/bundles/desktop.py).
+UNSTAMPED_VERSION = '0.0.0'
+
+
+def source_desktop_version(package, pin):
+    """Desktop version of the pinned source: committed, or the pinned release tag if unstamped."""
+    version = package.get('version')
+    if version != UNSTAMPED_VERSION:
+        return version
+    tag = pin.get('releaseTag')
+    if not isinstance(tag, str) or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag) or tag[1:] == UNSTAMPED_VERSION:
+        raise ValueError('Unstamped upstream package requires an exact nonzero release tag pin')
+    return tag[1:]
 
 
 def archive_name(version, platform, arch):
@@ -67,6 +87,100 @@ def clean_environment(work, pin, inherited=None):
         'PYTHONNOUSERSITE':'1', 'PYTHONDONTWRITEBYTECODE':'1', 'PYTHONUTF8':'1',
     })
     return env
+
+
+# Inputs that only electron-builder/build stamping consume. Upstream tests read
+# them too (channel identity, payload version) and must see an unstamped host.
+PACKAGING_ONLY_ENV = ('HERMES_PAYLOAD_VERSION', 'HERMES_DESKTOP_DISTRIBUTION',
+                      'HERMES_DESKTOP_DISTRIBUTION_VERSION', 'DESKTOP_BUILD_PYTHON',
+                      'DESKTOP_BUILD_LOGS', 'DESKTOP_SIGNING_TEST_SOURCE')
+# Linux sun_path is 108 bytes including NUL. Upstream fixtures nest sockets
+# three directories below os.tmpdir() (vitest.run-tmp.ts adds one more), and
+# ssh-connection keeps ControlPath under HOME only within OpenSSH's 104 bytes.
+SOCKET_BUDGETS = (
+    ('t/vitest-XXXXXX/desktop-gw-XXXXXX/hermes-gw-0123456789abcdef/control.sock', 107),
+    ('h/.hermesmagic-test/desktop-ssh/0123456789abcdef.sock.0123456789abcdef', 104),
+)
+
+
+def private_short_root(parent='/tmp', prefix='hb-'):
+    """A fresh owner-only directory whose path keeps upstream socket fixtures under sun_path."""
+    import stat
+    import tempfile
+    root = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    st = os.lstat(root)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or stat.S_IMODE(st.st_mode) != 0o700:
+        raise RuntimeError(f'Unsafe private test root: {root}')
+    for probe, limit in SOCKET_BUDGETS:
+        if len(os.fsencode(str(root/probe))) > limit:
+            os.rmdir(root)
+            raise RuntimeError(f'Private test root too long for AF_UNIX sockets: {root}')
+    return root
+
+
+def full_suite_environment(env, root):
+    """Test env for the upstream suite: no packaging inputs, short private HOME and temp."""
+    root = Path(root)
+    test = {k: v for k, v in env.items() if k not in PACKAGING_ONLY_ENV}
+    home, tmp = root/'h', root/'t'
+    for p in (home, tmp, home/'.config', home/'.local/share'):
+        p.mkdir(parents=True, exist_ok=True)
+    test.update({
+        'HOME': str(home), 'USERPROFILE': str(home), 'HERMES_HOME': str(home/'.hermes'),
+        'XDG_CONFIG_HOME': str(home/'.config'), 'XDG_DATA_HOME': str(home/'.local/share'),
+        'TMPDIR': str(tmp), 'TMP': str(tmp), 'TEMP': str(tmp),
+    })
+    return test
+
+
+def apply_github_file_commands(env, env_file, path_file):
+    """Apply GITHUB_ENV/GITHUB_PATH as the runner would to the next step: last PATH line first."""
+    env = dict(env)
+    for line in Path(env_file).read_text(encoding='utf-8').splitlines():
+        if not line:
+            continue
+        key, sep, value = line.partition('=')
+        if not sep or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) or '<<' in key:
+            raise ValueError(f'Unsupported GITHUB_ENV command: {line!r}')
+        env[key] = value
+    dirs = [line for line in Path(path_file).read_text(encoding='utf-8').splitlines() if line]
+    if dirs:
+        env['PATH'] = os.pathsep.join(list(reversed(dirs)) + [env['PATH']])
+    return env
+
+
+def hermes_test_runtime(src, env, root, logs, bootstrap, runner=None):
+    """Upstream's supported test interpreter: setup-pm's toolchain + --test-environment phases.
+
+    Mirrors .github/actions/setup-pm (js-tests.yml: extras '[]', test-environment true)
+    for the Python toolchain only; Node/pnpm stay the pin-verified ones on PATH.
+    """
+    runner = runner or run
+    root = Path(root)
+    pm_home, files = root/'pm', root/'gh'
+    files.mkdir(parents=True, exist_ok=True)
+    commands = {name: files/name for name in ('GITHUB_ENV', 'GITHUB_OUTPUT', 'GITHUB_PATH')}
+    for f in commands.values():
+        f.write_text('', encoding='utf-8')
+    setup = str(Path(src)/'scripts/ci/setup_toolchain.py')
+    # The interpreter must come from the exports below, never the build host's.
+    env = {k: v for k, v in env.items() if k not in ('HERMES_PYTHON', 'VIRTUAL_ENV', 'PYTHONPATH')}
+    current = dict(env, **{k: str(v) for k, v in commands.items()})
+    for phase, extra in (('prepare', ['--extras', '[]']), ('install', []),
+                         ('dependencies', ['--extras', '[]', '--test-environment'])):
+        python = bootstrap if phase != 'dependencies' else current.get('HERMES_PYTHON')
+        if not python:
+            raise RuntimeError('Upstream test environment did not export its interpreter')
+        runner('hermes-test-runtime-'+phase, [python, '-S', setup, phase, '--toolchain', 'python',
+                                             '--home', str(pm_home), *extra], src, current, logs)
+        current = apply_github_file_commands(dict(env, **{k: str(v) for k, v in commands.items()}),
+                                             commands['GITHUB_ENV'], commands['GITHUB_PATH'])
+    for key in commands:
+        current.pop(key, None)
+    python = Path(current.get('HERMES_PYTHON', ''))
+    if not current.get('VIRTUAL_ENV') or not python.is_file() or python.parent.parent != Path(current['VIRTUAL_ENV']):
+        raise RuntimeError('Upstream test environment did not export its interpreter')
+    return current
 
 
 def run(label, command, cwd, env, logs, allow_failure=False):
@@ -168,3 +282,41 @@ def gate_test_report(report, pin, returncode, platform=None):
     return {'total':report['numTotalTests'], 'passed':report.get('numPassedTests'),
             'failed':report.get('numFailedTests',0), 'pending':report.get('numPendingTests',0),
             'allowedFailures':failures, 'suiteGreen':returncode==0, 'releaseGatePassed':True}
+
+
+PNPM_URL = re.compile(r'https://registry\.npmjs\.org/(?:@pnpm/exe\.[a-z0-9-]+/-/exe\.[a-z0-9-]+|pnpm/-/pnpm)-[0-9]+\.[0-9]+\.[0-9]+\.tgz')
+
+
+def provision_pnpm(src, target, dest, fetch=None):
+    """Install upstream's pm/lock.json pnpm (native exe + launcher dist/node-gyp), SHA256-verified.
+
+    No global install: the binary lives in the private build workspace only.
+    """
+    lock = json.loads((Path(src)/'pm/lock.json').read_text())
+    artifacts = lock['packages']['pnpm']['artifacts'][target]
+    if not isinstance(artifacts, list) or len(artifacts) != 2:
+        raise ValueError('Unexpected pnpm artifact pin for ' + target)
+    fetch = fetch or (lambda url: urllib.request.urlopen(url, timeout=120).read())
+    dest = Path(dest)
+    if dest.exists():
+        raise RuntimeError('Refusing to reuse a pnpm tool directory')
+    dest.mkdir(parents=True)
+    for artifact in artifacts:
+        url, sha = artifact['url'], artifact['sha256']
+        if not PNPM_URL.fullmatch(url) or not re.fullmatch('[0-9a-f]{64}', sha):
+            raise ValueError('Unexpected pnpm artifact URL/hash')
+        data = fetch(url)
+        if hashlib.sha256(data).hexdigest() != sha:
+            raise ValueError('pnpm artifact SHA256 mismatch: ' + url)
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as tar:
+            members = [m for m in tar.getmembers() if m.name.startswith('package/')]
+            if '/@pnpm/exe.' not in url:
+                members = [m for m in members if m.name.startswith('package/dist/')]
+            for member in members:
+                member.name = member.name[len('package/'):]
+            tar.extractall(dest, members=members, filter='data')
+    binary = dest/('pnpm.exe' if target.startswith('win32') else 'pnpm')
+    if not binary.is_file():
+        raise RuntimeError('Pinned pnpm executable missing after extraction')
+    binary.chmod(0o755)
+    return binary

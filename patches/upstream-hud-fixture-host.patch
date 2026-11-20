@@ -1,0 +1,19 @@
+diff --git a/apps/desktop/scripts/stage-native-deps.test.mjs b/apps/desktop/scripts/stage-native-deps.test.mjs
+index 8f3bbe8a24f61eb0c445c3822e7c5d92e2c07f5b..d54e384b68b478afdefe79e7d93ff4fd153abd3a 100644
+--- a/apps/desktop/scripts/stage-native-deps.test.mjs
++++ b/apps/desktop/scripts/stage-native-deps.test.mjs
+@@ -75,7 +75,13 @@ test('a missing Linux HUD toolchain leaves no empty package directories', () =>
+     const distDir = join(tmp, 'dist')
+     assert.equal(buildHudModifierMonitor({ source: join(tmp, 'missing-source'), distDir, platform: 'linux', arch: 'x64' }), null)
+     assert.equal(existsSync(join(distDir, 'native')), false)
+-    assert.match(warnings.join('\n'), /desktop packaging continues/)
++    if (process.platform === 'linux' && process.arch === 'x64') {
++      // Native Linux host: the compile is attempted, fails on the missing source, and is optional.
++      assert.match(warnings.join('\n'), /desktop packaging continues/)
++    } else {
++      // Any other host refuses before compiling, so no host binary ships under the Linux name.
++      assert.deepEqual(warnings, ['[hud-modifier] linux-x64 needs a native build; modifier tap unavailable for this target'])
++    }
+   } finally {
+     console.warn = originalWarn
+     fs.rmSync(tmp, { recursive: true, force: true })

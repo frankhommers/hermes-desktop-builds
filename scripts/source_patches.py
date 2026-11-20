@@ -19,21 +19,25 @@ HOMEBREW_UPDATER_PATHS = frozenset({
     'apps/desktop/electron/community-homebrew-update.test.ts',
     'apps/desktop/electron/community-homebrew-update.ts',
     'apps/desktop/electron/main.ts',
-    'apps/desktop/electron/ssh-connection.ts',
     'apps/desktop/scripts/write-build-stamp.mjs',
     'apps/desktop/scripts/write-build-stamp.test.mjs',
     'apps/desktop/src/lib/version-status.test.ts',
     'apps/desktop/src/lib/version-status.ts',
-    'apps/desktop/src/store/voice-prefs.test.ts',
 })
-
-# Temporary fix for an official source defect that breaks typecheck: the
-# onboarding card imports undeclared lucide-react. Remove once upstream
-# declares the dependency or switches to the declared Tabler icon set.
-UPSTREAM_BUILD_FIX_PATCH = 'upstream-build-fix.patch'
-UPSTREAM_BUILD_FIX_PATHS = frozenset({
-    'apps/desktop/src/components/onboarding-chat/cards/setup.tsx',
-})
+# Upstream test-only defect: the Linux HUD fixture asserts the native-Linux
+# compile-failure warning on every host, but on non-Linux hosts the builder
+# (correctly) refuses before compiling. Exactly this one test file; drop the
+# patch once upstream makes the assertion host-aware.
+UPSTREAM_HUD_FIXTURE_PATCH = 'upstream-hud-fixture-host.patch'
+UPSTREAM_HUD_FIXTURE_PATHS = frozenset({'apps/desktop/scripts/stage-native-deps.test.mjs'})
+# Retired at official v0.23.2 (upstream carries the fix; do not re-add):
+#  - upstream-build-fix.patch: upstream declared lucide-react (2ecc90df3a4) and
+#    deleted onboarding-chat/cards/setup.tsx (cc791d5d3e).
+#  - ssh-connection.ts short ControlPath: upstream a252718284/947224dd5d use a
+#    validated uid-scoped /tmp directory when the home path is too long.
+#  - voice-prefs.test.ts Storage.prototype spy: upstream's Node 26 jsdom setup
+#    (22df1840d6) installs a plain-object localStorage, so the upstream spy is
+#    the one that injects the failure.
 
 
 def _patch_path_is_approved(patch_name, source_path):
@@ -43,8 +47,8 @@ def _patch_path_is_approved(patch_name, source_path):
         return REMOTE_UI_PATH_RE.fullmatch(source_path) is not None
     if patch_name == HOMEBREW_UPDATER_PATCH:
         return source_path in HOMEBREW_UPDATER_PATHS
-    if patch_name == UPSTREAM_BUILD_FIX_PATCH:
-        return source_path in UPSTREAM_BUILD_FIX_PATHS
+    if patch_name == UPSTREAM_HUD_FIXTURE_PATCH:
+        return source_path in UPSTREAM_HUD_FIXTURE_PATHS
     return False
 
 
