@@ -1,10 +1,14 @@
 """Shared pin validation, isolated environment, logs and explicit test gates."""
+import hashlib
+import io
 import json
 from collections import Counter
 import os
 from pathlib import Path
 import re
 import subprocess
+import tarfile
+import urllib.request
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +36,22 @@ def load_pin():
 
 def release_version(pin):
     return f"{pin['version']}.{pin['revision']}"
+
+
+# Since the semver tags (v0.22+) upstream commits apps/desktop/package.json at this
+# placeholder and injects the release version at build time (scripts/bundles/desktop.py).
+UNSTAMPED_VERSION = '0.0.0'
+
+
+def source_desktop_version(package, pin):
+    """Desktop version of the pinned source: committed, or the pinned release tag if unstamped."""
+    version = package.get('version')
+    if version != UNSTAMPED_VERSION:
+        return version
+    tag = pin.get('releaseTag')
+    if not isinstance(tag, str) or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag) or tag[1:] == UNSTAMPED_VERSION:
+        raise ValueError('Unstamped upstream package requires an exact nonzero release tag pin')
+    return tag[1:]
 
 
 def archive_name(version, platform, arch):
@@ -168,3 +188,41 @@ def gate_test_report(report, pin, returncode, platform=None):
     return {'total':report['numTotalTests'], 'passed':report.get('numPassedTests'),
             'failed':report.get('numFailedTests',0), 'pending':report.get('numPendingTests',0),
             'allowedFailures':failures, 'suiteGreen':returncode==0, 'releaseGatePassed':True}
+
+
+PNPM_URL = re.compile(r'https://registry\.npmjs\.org/(?:@pnpm/exe\.[a-z0-9-]+/-/exe\.[a-z0-9-]+|pnpm/-/pnpm)-[0-9]+\.[0-9]+\.[0-9]+\.tgz')
+
+
+def provision_pnpm(src, target, dest, fetch=None):
+    """Install upstream's pm/lock.json pnpm (native exe + launcher dist/node-gyp), SHA256-verified.
+
+    No global install: the binary lives in the private build workspace only.
+    """
+    lock = json.loads((Path(src)/'pm/lock.json').read_text())
+    artifacts = lock['packages']['pnpm']['artifacts'][target]
+    if not isinstance(artifacts, list) or len(artifacts) != 2:
+        raise ValueError('Unexpected pnpm artifact pin for ' + target)
+    fetch = fetch or (lambda url: urllib.request.urlopen(url, timeout=120).read())
+    dest = Path(dest)
+    if dest.exists():
+        raise RuntimeError('Refusing to reuse a pnpm tool directory')
+    dest.mkdir(parents=True)
+    for artifact in artifacts:
+        url, sha = artifact['url'], artifact['sha256']
+        if not PNPM_URL.fullmatch(url) or not re.fullmatch('[0-9a-f]{64}', sha):
+            raise ValueError('Unexpected pnpm artifact URL/hash')
+        data = fetch(url)
+        if hashlib.sha256(data).hexdigest() != sha:
+            raise ValueError('pnpm artifact SHA256 mismatch: ' + url)
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as tar:
+            members = [m for m in tar.getmembers() if m.name.startswith('package/')]
+            if '/@pnpm/exe.' not in url:
+                members = [m for m in members if m.name.startswith('package/dist/')]
+            for member in members:
+                member.name = member.name[len('package/'):]
+            tar.extractall(dest, members=members, filter='data')
+    binary = dest/('pnpm.exe' if target.startswith('win32') else 'pnpm')
+    if not binary.is_file():
+        raise RuntimeError('Pinned pnpm executable missing after extraction')
+    binary.chmod(0o755)
+    return binary

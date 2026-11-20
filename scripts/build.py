@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from common import ROOT, WORK, OUT, load_pin, release_version, archive_name, clean_environment, run, gate_test_report
+from common import provision_pnpm, ROOT, WORK, OUT, load_pin, release_version, archive_name, clean_environment, run, gate_test_report, source_desktop_version
 from package import digest, native_inventory, inventory, make_archive, unpack_archive
 from macos_signing import verify_bundle, verify_extracted
 from source_patches import apply_patches, verify_source_state
@@ -39,11 +39,9 @@ def main():
     if target=='darwin':
         env['HERMES_DESKTOP_DISTRIBUTION']='frankhommers-homebrew'
         env['HERMES_DESKTOP_DISTRIBUTION_VERSION']=version
-    node=shutil.which('node');git=shutil.which('git');npm_path=shutil.which('npm.cmd' if os.name=='nt' else 'npm')
-    if not all((node,git,npm_path)):raise RuntimeError('Node, npm and Git are required')
-    npm_file=Path(npm_path).parent/'node_modules/npm/bin/npm-cli.js' if os.name=='nt' else Path(npm_path).resolve()
-    if not npm_file.is_file():raise RuntimeError('Cannot locate the installed npm CLI')
-    npm=[node,str(npm_file)]
+    # Upstream (v0.22+) installs JS with the pnpm pinned in pm/lock.json and refuses npm.
+    node=shutil.which('node');git=shutil.which('git')
+    if not all((node,git)):raise RuntimeError('Node and Git are required')
     def cmd(name,command,cwd=ROOT,allow_failure=False):return run(name,command,cwd,env,logs,allow_failure)
     hostnode=subprocess.check_output([node,'-p','process.platform+" "+process.arch+" "+process.versions.node'],env=env,text=True).strip()
     if hostnode!=f'{target} {arch} {pin["node"]}':raise RuntimeError(f'Expected pinned native Node, got {hostnode}')
@@ -57,16 +55,29 @@ def main():
     sha=subprocess.check_output([git,'rev-parse','HEAD'],cwd=src,env=env,text=True).strip()
     if sha!=pin['commit']:raise RuntimeError('Fetched commit does not match pin')
     desktop=src/'apps/desktop';pkg=json.loads((desktop/'package.json').read_text())
-    if pkg['version']!=pin['version']:raise RuntimeError('Upstream version does not match pin')
+    if source_desktop_version(pkg,pin)!=pin['version']:raise RuntimeError('Upstream version does not match pin')
+    pnpm=provision_pnpm(src,label,WORK/'tools/pnpm')
+    env['PATH']=str(pnpm.parent)+os.pathsep+env['PATH']
+    pinned_pnpm=json.loads((src/'pm/lock.json').read_text())['packages']['pnpm']['version']
+    host_pnpm=subprocess.check_output([str(pnpm),'--version'],cwd=src,env=env,text=True).strip()
+    if host_pnpm!=pinned_pnpm:raise RuntimeError(f'Expected upstream-pinned pnpm {pinned_pnpm}, got {host_pnpm}')
+    pnpm=str(pnpm)
+    electron_version=pkg['devDependencies']['electron']
+    # Upstream injects the release version at build time (package.json is 0.0.0).
+    env['HERMES_PAYLOAD_VERSION']=pin['version']
+    # Test-only interpreter: keeps vitest's globalSetup from provisioning a Python runtime.
+    env['HERMES_PYTHON']=sys.executable
     source_patch=apply_patches(src,pin,env=env)
     (logs/'source-patch.json').write_text(json.dumps(source_patch,indent=2)+'\n')
-    cmd('npm-ci',npm+['ci','--ignore-scripts','--no-audit','--no-fund','--workspace','apps/desktop','--include-workspace-root'],src)
+    # Upstream's locked installer: frozen pnpm lockfile, reviewed allowBuilds only, then the
+    # lock-pinned Electron runtime (scripts/build/electron-runtime.mjs). tests-js is required
+    # because the desktop typecheck (tsconfig.e2e.json) includes tests-js/scripts.
+    cmd('pnpm-install',[node,str(src/'scripts/build/node-deps.mjs'),'--source',str(src),'--workspace','apps/desktop','--workspace','tests-js'],src)
     env['DESKTOP_SIGNING_TEST_SOURCE']=str(src)
     cmd('mac-signing-api-unit-tests',[node,'--test',str(ROOT/'tests/macos-signing-api.test.mjs')])
     env.pop('DESKTOP_SIGNING_TEST_SOURCE')
     installer=subprocess.check_output([node,'-p',"require.resolve('electron/install.js')"],cwd=desktop,env=env,text=True).strip()
-    cmd('electron-install',[node,installer],desktop)
-    cmd('typecheck',npm+['run','typecheck'],desktop)
+    cmd('typecheck',[pnpm,'run','typecheck'],desktop)
     # Full patched upstream suite on Linux; UI/startup/packaging tests on every host.
     gate=None
     reporter=['--reporter='+str(ROOT/'scripts/completion-reporter.mjs')]
@@ -84,17 +95,21 @@ def main():
     if target!='win32':
         targeted.append('electron/ssh-connection.test.ts')
     env['DESKTOP_TEST_RECEIPT']=str(logs/'targeted-completion.json')
-    rc=cmd('targeted-tests',npm+['test','--','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+reporter+targeted,desktop,True)
+    rc=cmd('targeted-tests',[pnpm,'exec','vitest','run','--maxWorkers=2','--reporter=default','--reporter=json','--outputFile.json='+str(logs/'targeted.json')]+reporter+targeted,desktop,True)
     data=json.loads((logs/'targeted.json').read_text());data['runCompletion']=json.loads((logs/'targeted-completion.json').read_text())
     targeted_gate=gate_test_report(data,pin,rc,target)
     env.pop('DESKTOP_TEST_RECEIPT')
     (logs/'targeted-gate.json').write_text(json.dumps(targeted_gate,indent=2)+'\n')
     print('TARGETED SUITE:',json.dumps(targeted_gate),flush=True)
-    cmd('build',npm+['run','build'],desktop)
-    builder=subprocess.check_output([node,'-p',"require.resolve('electron-builder/cli.js')"],cwd=desktop,env=env,text=True).strip()
+    cmd('build',[pnpm,'run','build'],desktop)
+    # electron-builder 27 exports no ./package.json or ./cli.js; use the lock-pinned package dir.
+    builder=str((desktop/'node_modules/electron-builder').resolve()/'cli.js')
+    if not Path(builder).is_file():raise RuntimeError('Cannot locate the lock-pinned electron-builder CLI')
     pack=WORK/'packed'
     staged_count=0
-    buildargs=[node,builder,{'darwin':'--mac','win32':'--win','linux':'--linux'}[target],'--dir','--'+arch,'--publish','never','-c.forceCodeSigning=false','-c.directories.output='+str(pack)]
+    buildargs=[node,builder,{'darwin':'--mac','win32':'--win','linux':'--linux'}[target],'--dir','--'+arch,'--publish','never','--config','electron-builder.config.cjs',
+             '-c.extraMetadata.version='+pin['version'],'-c.electronDist='+str(Path(installer).parent/'dist'),
+             '-c.forceCodeSigning=false','-c.directories.output='+str(pack)]
     if target=='darwin':
         # Delay outer signing until all resources exist. Sign staged native bytes only
         # after upstream beforePack re-stages them, BEFORE ASAR hashes are computed.
@@ -147,6 +162,8 @@ def main():
     command=[node,str(ROOT/'scripts/smoke.mjs'),str(src),str(binary),str(WORK/'smoke/h'),str(logs)]
     if target=='linux' and shutil.which('strace'):
         command=[shutil.which('strace'),'-f','-e','trace=process,network,%file','-s','200','-o',str(logs/'native-strace.log')]+command
+    if target=='linux':
+        command=['xvfb-run','-a',*command]
     try:
         run('native-smoke',command,ROOT,smoke_env,logs)
     finally:
@@ -157,7 +174,7 @@ def main():
     if target=='linux':
         report=logs/'vitest.json'
         env['DESKTOP_TEST_RECEIPT']=str(logs/'full-completion.json')
-        rc=cmd('upstream-full-tests',npm+['test','--','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)]+reporter,desktop,True)
+        rc=cmd('upstream-full-tests',[pnpm,'exec','vitest','run','--maxWorkers=4','--reporter=default','--reporter=json','--outputFile.json='+str(report)]+reporter,desktop,True)
         data=json.loads(report.read_text());data['runCompletion']=json.loads((logs/'full-completion.json').read_text())
         gate=gate_test_report(data,pin,rc)
         (logs/'test-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
@@ -168,7 +185,7 @@ def main():
         mac_signing=verify_extracted(extracted/bundle.name,arch,staged_count,cmd,logs)
         if inventory(bundle)!=inventory(extracted/bundle.name):raise RuntimeError('Mac negative tests did not restore exact bundle')
     verify_source_state(src,pin,source_patch,env=env)
-    manifest={'version':version,'upstream':pin,'platform':target,'arch':arch,'electron':pkg['build']['electronVersion'],
+    manifest={'version':version,'upstream':pin,'platform':target,'arch':arch,'electron':electron_version,
               'archive':archive.name,'sha256':digest(archive),'bytes':archive.stat().st_size,
               'sourceClean':False,'sourceVerified':True,'sourcePatch':source_patch,
               'archiveRoundtrip':True,'nativeSmoke':json.loads((logs/'smoke.json').read_text()),

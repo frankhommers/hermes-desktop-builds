@@ -131,15 +131,44 @@ class SourcePatchTests(unittest.TestCase):
         self.assertTrue(_patch_path_is_approved(
             'homebrew-client-updater.patch', 'apps/desktop/electron/main.ts'))
         self.assertTrue(_patch_path_is_approved(
-            'homebrew-client-updater.patch', 'apps/desktop/src/store/voice-prefs.test.ts'))
+            'remote-client-ui.patch', 'apps/desktop/src/components/remote-setup/first-run.tsx'))
+        self.assertTrue(_patch_path_is_approved(
+            'homebrew-client-updater.patch', 'apps/desktop/electron/community-homebrew-update.ts'))
         self.assertFalse(_patch_path_is_approved(
             'homebrew-client-updater.patch', 'apps/desktop/electron/preload.ts'))
-        self.assertTrue(_patch_path_is_approved(
+        # Retired at v0.23.2 because upstream carries the fix: never re-approved.
+        for retired in ('apps/desktop/electron/ssh-connection.ts', 'apps/desktop/src/store/voice-prefs.test.ts'):
+            self.assertFalse(_patch_path_is_approved('homebrew-client-updater.patch', retired))
+        self.assertFalse(_patch_path_is_approved(
             'upstream-build-fix.patch', 'apps/desktop/src/components/onboarding-chat/cards/setup.tsx'))
         self.assertFalse(_patch_path_is_approved(
-            'upstream-build-fix.patch', 'apps/desktop/src/components/desktop-install-overlay.tsx'))
-        self.assertFalse(_patch_path_is_approved(
             'anything-else.patch', 'apps/desktop/electron/main.ts'))
+
+
+class CheckedInPatchSetTests(unittest.TestCase):
+    """The real pinned patch set: exact names, hashes and per-patch scopes."""
+
+    def test_manifest_hashes_and_order(self):
+        from source_patches import PATCH_DIR, patch_set
+        rows = patch_set(PATCH_DIR)['patches']
+        self.assertEqual([row['file'] for row in rows], ['remote-client-ui.patch', 'homebrew-client-updater.patch'])
+        self.assertFalse((PATCH_DIR / 'upstream-build-fix.patch').exists())
+
+    def test_every_checked_in_patch_stays_inside_its_scope(self):
+        from source_patches import PATCH_DIR, patch_set
+        for row in patch_set(PATCH_DIR)['patches']:
+            text = (PATCH_DIR / row['file']).read_text(encoding='utf-8')
+            paths = [line.split(' b/', 1)[1] for line in text.splitlines() if line.startswith('diff --git ')]
+            self.assertTrue(paths, row['file'])
+            for path in paths:
+                with self.subTest(patch=row['file'], path=path):
+                    self.assertTrue(_patch_path_is_approved(row['file'], path))
+
+    def test_community_identity_never_overwrites_upstream_distribution(self):
+        from source_patches import PATCH_DIR
+        text = (PATCH_DIR / 'homebrew-client-updater.patch').read_text(encoding='utf-8')
+        self.assertIn('communityDistribution: identity', text)
+        self.assertNotIn('return { distribution: identity', text)
 
 
 if __name__ == '__main__':
