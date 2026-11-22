@@ -267,6 +267,48 @@ class PlanTests(unittest.TestCase):
         with self.assertRaises(u.UpdateError):
             self.plan(api)
 
+    def semver_release(self, tag, version='0.0.0'):
+        api = FixtureAPI(version=version)
+        api.data[f'repos/{u.UPSTREAM}/releases/latest'] = dict(RELEASE, tag_name=tag)
+        api.data[f'repos/{u.UPSTREAM}/git/ref/tags/{tag}'] = {
+            'ref': f'refs/tags/{tag}', 'object': {'type': 'tag', 'sha': TAG}}
+        return api
+
+    def test_unstamped_package_takes_the_semver_release_tag(self):
+        candidate, meta = self.plan(self.semver_release('v0.23.0'))
+        self.assertEqual((candidate['version'], candidate['revision'], candidate['releaseTag']),
+                         ('0.23.0', 1, 'v0.23.0'))
+        self.assertEqual(meta['action'], 'update')
+
+    def test_only_the_exact_placeholder_defers_to_the_tag(self):
+        # A committed real version still wins over the tag, and still cannot downgrade.
+        self.assertEqual(self.plan(self.semver_release('v0.23.0', '0.18.1'))[0]['version'], '0.18.1')
+        with self.assertRaisesRegex(u.UpdateError, 'downgrade'):
+            self.plan(self.semver_release('v0.23.0', '0.16.0'))
+
+    def test_unstamped_package_cannot_downgrade_or_use_a_calendar_tag_below_pin(self):
+        with self.assertRaisesRegex(u.UpdateError, 'downgrade'):
+            self.plan(self.semver_release('v0.16.9'))
+        with self.assertRaisesRegex(u.UpdateError, 'nonzero'):
+            self.plan(self.semver_release('v0.0.0'))
+        api = self.semver_release('v0.23.0')
+        api.data[f'repos/{u.DOWNSTREAM}/tags?per_page=100&page=1'] = [{'name': 'v0.24.0.1'}]
+        with self.assertRaisesRegex(u.UpdateError, 'downgrade'):
+            self.plan(api)
+
+    def test_identical_unstamped_pin_is_checked_against_its_tag(self):
+        pin = dict(PIN, commit=OLD, version='0.23.0', revision=1, releaseTag='v0.23.0', releaseId=123)
+        api = FixtureAPI(status='identical', version='0.0.0', commit=OLD)
+        api.data[f'repos/{u.UPSTREAM}/releases/latest'] = dict(RELEASE, tag_name='v0.23.0')
+        api.data[f'repos/{u.UPSTREAM}/releases/123'] = dict(RELEASE, tag_name='v0.23.0')
+        api.data[f'repos/{u.UPSTREAM}/git/ref/tags/v0.23.0'] = {
+            'ref': 'refs/tags/v0.23.0', 'object': {'type': 'tag', 'sha': TAG}}
+        api.data[f'repos/{u.DOWNSTREAM}/tags?per_page=100&page=1'] = [{'name': 'v0.23.0.1'}]
+        self.assertEqual(self.plan(api, pin)[1]['reason'], 'version_already_reserved_or_superseded')
+        mismatched = dict(pin, version='0.22.0')
+        with self.assertRaisesRegex(u.UpdateError, 'Pinned package version mismatch'):
+            self.plan(api, mismatched)
+
 
 def run_receipt(sha, conclusion=None):
     return dict(id=42, head_sha=sha, head_branch='main', event='workflow_dispatch',

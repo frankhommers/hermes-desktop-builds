@@ -3,15 +3,15 @@
   "patches": [
     {
       "file": "remote-client-ui.patch",
-      "sha256": "181ba4d4fabb948a27a2d6ba48e46e71c988aab360b6dad0495d0cb85c13931a"
+      "sha256": "549c61e9d7f95b92c4d78c4049b786245a22ed433faa4624834e4a484622473d"
     },
     {
       "file": "homebrew-client-updater.patch",
-      "sha256": "e04462f7951cc134ddef09b261bbd7334c6ec2e1bcdd2ec132dd8cfbd8e3c5f5"
+      "sha256": "cef213014258382c47c074016fed4661de809001ed15f3724e78232ef4e44235"
     },
     {
-      "file": "upstream-build-fix.patch",
-      "sha256": "87ee9ccce5f80151ce1aa3b64ce9c1493205279b875e1153e8735d5f81f5ff7d"
+      "file": "upstream-hud-fixture-host.patch",
+      "sha256": "4c15d344609aeb6765464f41f9a01ae399793162af475505aa65d60b8ac6ed5b"
     }
   ]
 }

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from common import validate_pin, clean_environment, gate_test_report
+from common import validate_pin, clean_environment, gate_test_report, source_desktop_version, provision_pnpm
 from package import binary_arches, make_archive, inventory, unpack_archive
 
 TEST_TMP=Path(__file__).resolve().parents[1]/'.work/test-tmp'
@@ -18,6 +18,39 @@ tempfile.tempdir=str(TEST_TMP)
 PIN = {'repository': 'NousResearch/hermes-agent', 'commit': '939e45c91d751fadd94dcd1b873ac3cb44846213', 'version': '0.17.2', 'revision': 1, 'node': '22.22.2'}
 
 class BuildTests(unittest.TestCase):
+    def test_unstamped_source_version_comes_only_from_exact_release_tag(self):
+        pin={**PIN,'version':'0.23.2','releaseTag':'v0.23.2'}
+        self.assertEqual(source_desktop_version({'version':'0.0.0'},pin),'0.23.2')
+        self.assertEqual(source_desktop_version({'version':'0.17.6'},pin),'0.17.6')
+        for bad in [{}, {'releaseTag':'v0.0.0'}, {'releaseTag':'0.23.2'}, {'releaseTag':'v2026.9.24-x'}]:
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                source_desktop_version({'version':'0.0.0'},{**PIN,**bad})
+
+    def test_pnpm_is_hash_pinned_from_upstream_lock(self):
+        import hashlib, io, tarfile
+        def tgz(files):
+            raw=io.BytesIO()
+            with tarfile.open(fileobj=raw,mode='w:gz') as tar:
+                for name,data in files.items():
+                    info=tarfile.TarInfo(name);info.size=len(data);tar.addfile(info,io.BytesIO(data))
+            return raw.getvalue()
+        exe=tgz({'package/pnpm':b'#!fake','package/package.json':b'{}'})
+        launcher=tgz({'package/dist/node-gyp-bin/x':b'x','package/bin/pnpm.cjs':b'ignored'})
+        urls=['https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.15.0.tgz','https://registry.npmjs.org/pnpm/-/pnpm-12.15.0.tgz']
+        blobs=dict(zip(urls,[exe,launcher]))
+        with tempfile.TemporaryDirectory() as tmp:
+            src=Path(tmp)/'src';(src/'pm').mkdir(parents=True)
+            def lock(digests):
+                (src/'pm/lock.json').write_text(json.dumps({'packages':{'pnpm':{'version':'12.15.0','artifacts':{'linux-x64':[{'url':u,'sha256':d} for u,d in zip(urls,digests)]}}}}))
+            lock([hashlib.sha256(b).hexdigest() for b in (exe,launcher)])
+            binary=provision_pnpm(src,'linux-x64',Path(tmp)/'t1',fetch=blobs.__getitem__)
+            self.assertEqual(binary.read_bytes(),b'#!fake')
+            self.assertTrue((binary.parent/'dist/node-gyp-bin/x').is_file())
+            self.assertFalse((binary.parent/'bin').exists())
+            lock(['0'*64,hashlib.sha256(launcher).hexdigest()])
+            with self.assertRaisesRegex(ValueError,'SHA256'):
+                provision_pnpm(src,'linux-x64',Path(tmp)/'t2',fetch=blobs.__getitem__)
+
     def test_pin_is_exact(self):
         self.assertEqual(validate_pin(PIN)['commit'], PIN['commit'])
         for bad in ['main', PIN['commit']+' ', PIN['commit'].upper(), '0'*40, ';touch nope']:

@@ -8,7 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 class PipelineContractTests(unittest.TestCase):
     def test_patch_is_applied_before_dependency_code_and_verified_after_tests(self):
         source = (ROOT / 'scripts/build.py').read_text()
-        self.assertLess(source.index('source_patch=apply_patches('), source.index("cmd('npm-ci'"))
+        self.assertLess(source.index('source_patch=apply_patches('), source.index("cmd('pnpm-install'"))
+        self.assertNotIn("'npm-ci'", source)
+        self.assertIn("env['HERMES_PAYLOAD_VERSION']=pin['version']", source)
+        self.assertIn("'-c.extraMetadata.version='+pin['version']", source)
         self.assertLess(source.index("cmd('upstream-full-tests'"), source.index('verify_source_state('))
         self.assertIn("'sourceClean':False,'sourceVerified':True,'sourcePatch':source_patch", source)
         for test in ('fleet-rail.test.ts', 'profile-rail-fleet.test.tsx',
@@ -24,10 +27,15 @@ class PipelineContractTests(unittest.TestCase):
         smoke = (ROOT / 'scripts/smoke.mjs').read_text()
         self.assertIn("if target=='darwin':\n        env['HERMES_DESKTOP_DISTRIBUTION']='frankhommers-homebrew'", build)
         self.assertIn("env['HERMES_DESKTOP_DISTRIBUTION_VERSION']=version", build)
-        self.assertIn("assert.equal(stamp.distribution,'frankhommers-homebrew')", inspect)
+        self.assertIn("assert.equal(stamp.communityDistribution,'frankhommers-homebrew')", inspect)
         self.assertIn("runtimeDesktopVersionInfo.appVersion", smoke)
         self.assertIn("assert.equal(runtimeDesktopVersion,installStamp.distributionVersion)", smoke)
         self.assertIn("assert.equal(runtimeDesktopVersion,sourceDesktopVersion)", smoke)
+
+    def test_ci_node_matches_pin(self):
+        import json
+        pin = json.loads((ROOT / 'upstream.json').read_text())
+        self.assertIn(f"node-version: '{pin['node']}'", (ROOT / '.github/workflows/build.yml').read_text())
 
     def test_native_build_is_read_only_and_release_requires_verified_main(self):
         build = (ROOT / '.github/workflows/build.yml').read_text()

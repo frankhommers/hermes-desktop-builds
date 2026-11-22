@@ -7,13 +7,13 @@ import {createServer} from 'node:net';
 const [source,binary,home,logs]=process.argv.slice(2);
 assert(source&&binary&&home&&logs,'Usage: smoke.mjs source binary isolatedHome logs');
 const require=createRequire(path.join(source,'apps/desktop/package.json'));
-const {_electron}=require('playwright');
+const {_electron}=require('@playwright/test');
 assert.equal(fs.existsSync(path.join(home,'.hermes')),false,'Smoke HOME must be fresh');
 const env={...process.env};
 env.PATH=process.platform==='win32'?path.join(env.SystemRoot||env.SYSTEMROOT||'C:\\Windows','System32'):'/usr/bin:/bin:/usr/sbin:/sbin';
 const args=['--user-data-dir='+path.join(home,'u'),'--enable-logging=stderr'];
 // Linux CI only: no host kernel/security changes; never Mac/Windows install advice.
-if(process.platform==='linux'){delete env.DISPLAY;delete env.XAUTHORITY;args.push('--disable-gpu','--no-sandbox','--ozone-platform=headless');}
+if(process.platform==='linux'){assert(env.DISPLAY,'Run the Linux smoke under xvfb-run');args.push('--disable-gpu','--no-sandbox','--ozone-platform=x11');}
 const errors=[];
 let app;
 try {
@@ -31,18 +31,21 @@ try {
   assert.equal(paths.arch,process.arch);
   assert.equal(paths.hermesHome,path.join(home,'.hermes'));
   const installStamp=JSON.parse(fs.readFileSync(path.join(paths.resources,'install-stamp.json'),'utf8'));
-  const sourceDesktopVersion=JSON.parse(fs.readFileSync(path.join(source,'apps/desktop/package.json'),'utf8')).version;
+  // Upstream commits 0.0.0 and injects the pinned release version at packaging time.
+  const sourceDesktopVersion=JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname,'../upstream.json'),'utf8')).version;
   assert.match(sourceDesktopVersion,/^\d+(?:\.\d+)+$/);
-  const runtimeDesktopVersionInfo=await page.evaluate(()=>window.hermesDesktop.getVersion());
+  // No primary backend exists before setup. An explicitly absent remote lets the real
+  // version IPC resolve the installed Desktop identity without awaiting that setup.
+  const runtimeDesktopVersionInfo=await page.evaluate(()=>window.hermesDesktop.getVersion({connectionId:'smoke-no-registered-remote'}));
   assert.equal(typeof runtimeDesktopVersionInfo,'object');
   assert.equal(typeof runtimeDesktopVersionInfo.appVersion,'string');
   const runtimeDesktopVersion=runtimeDesktopVersionInfo.appVersion;
   if(process.platform==='darwin'){
-    assert.equal(installStamp.distribution,'frankhommers-homebrew');
+    assert.equal(installStamp.communityDistribution,'frankhommers-homebrew');
     assert.match(installStamp.distributionVersion,/^\d+(?:\.\d+)+$/);
     assert.equal(runtimeDesktopVersion,installStamp.distributionVersion);
   }else{
-    assert.equal(installStamp.distribution,undefined);
+    assert.equal(installStamp.communityDistribution,undefined);
     assert.equal(installStamp.distributionVersion,undefined);
     assert.equal(runtimeDesktopVersion,sourceDesktopVersion);
   }

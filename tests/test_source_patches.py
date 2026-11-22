@@ -131,15 +131,77 @@ class SourcePatchTests(unittest.TestCase):
         self.assertTrue(_patch_path_is_approved(
             'homebrew-client-updater.patch', 'apps/desktop/electron/main.ts'))
         self.assertTrue(_patch_path_is_approved(
-            'homebrew-client-updater.patch', 'apps/desktop/src/store/voice-prefs.test.ts'))
+            'remote-client-ui.patch', 'apps/desktop/src/components/remote-setup/first-run.tsx'))
+        self.assertTrue(_patch_path_is_approved(
+            'homebrew-client-updater.patch', 'apps/desktop/electron/community-homebrew-update.ts'))
         self.assertFalse(_patch_path_is_approved(
             'homebrew-client-updater.patch', 'apps/desktop/electron/preload.ts'))
-        self.assertTrue(_patch_path_is_approved(
+        # Retired at v0.23.2 because upstream carries the fix: never re-approved.
+        for retired in ('apps/desktop/electron/ssh-connection.ts', 'apps/desktop/src/store/voice-prefs.test.ts'):
+            self.assertFalse(_patch_path_is_approved('homebrew-client-updater.patch', retired))
+        self.assertFalse(_patch_path_is_approved(
             'upstream-build-fix.patch', 'apps/desktop/src/components/onboarding-chat/cards/setup.tsx'))
         self.assertFalse(_patch_path_is_approved(
-            'upstream-build-fix.patch', 'apps/desktop/src/components/desktop-install-overlay.tsx'))
-        self.assertFalse(_patch_path_is_approved(
             'anything-else.patch', 'apps/desktop/electron/main.ts'))
+        # The upstream HUD fixture patch is exactly one test file, nothing else.
+        self.assertTrue(_patch_path_is_approved(
+            'upstream-hud-fixture-host.patch', 'apps/desktop/scripts/stage-native-deps.test.mjs'))
+        for other in ('apps/desktop/scripts/build-hud-modifier-monitor.mjs',
+                      'apps/desktop/scripts/stage-native-deps.mjs',
+                      'apps/desktop/electron/main.ts'):
+            self.assertFalse(_patch_path_is_approved('upstream-hud-fixture-host.patch', other))
+        self.assertFalse(_patch_path_is_approved(
+            'homebrew-client-updater.patch', 'apps/desktop/scripts/stage-native-deps.test.mjs'))
+
+
+class CheckedInPatchSetTests(unittest.TestCase):
+    """The real pinned patch set: exact names, hashes and per-patch scopes."""
+
+    def test_manifest_hashes_and_order(self):
+        from source_patches import PATCH_DIR, patch_set
+        rows = patch_set(PATCH_DIR)['patches']
+        self.assertEqual([row['file'] for row in rows],
+                         ['remote-client-ui.patch', 'homebrew-client-updater.patch', 'upstream-hud-fixture-host.patch'])
+        self.assertFalse((PATCH_DIR / 'upstream-build-fix.patch').exists())
+
+    def test_every_checked_in_patch_stays_inside_its_scope(self):
+        from source_patches import PATCH_DIR, patch_set
+        for row in patch_set(PATCH_DIR)['patches']:
+            text = (PATCH_DIR / row['file']).read_text(encoding='utf-8')
+            paths = [line.split(' b/', 1)[1] for line in text.splitlines() if line.startswith('diff --git ')]
+            self.assertTrue(paths, row['file'])
+            for path in paths:
+                with self.subTest(patch=row['file'], path=path):
+                    self.assertTrue(_patch_path_is_approved(row['file'], path))
+
+    def test_community_identity_never_overwrites_upstream_distribution(self):
+        from source_patches import PATCH_DIR
+        text = (PATCH_DIR / 'homebrew-client-updater.patch').read_text(encoding='utf-8')
+        self.assertIn('communityDistribution: identity', text)
+        self.assertNotIn('return { distribution: identity', text)
+
+    def test_windows_sidecar_expectation_is_host_specific_not_relaxed(self):
+        from source_patches import PATCH_DIR
+        text = (PATCH_DIR / 'homebrew-client-updater.patch').read_text(encoding='utf-8')
+        # Windows gets its own exact backslash path; POSIX keeps the exact POSIX path.
+        self.assertIn("+      ? '\\\\App\\\\Contents\\\\Resources\\\\install-stamp.json'", text)
+        self.assertIn("+      : '/App/Contents/Resources/install-stamp.json'", text)
+        self.assertIn('+  assert.deepEqual(seen, [sidecar])', text)
+        self.assertNotIn("+  assert.deepEqual(seen, ['/App/Contents/Resources/install-stamp.json'])", text)
+
+    def test_hud_fixture_patch_keeps_both_host_branches_exact(self):
+        from source_patches import PATCH_DIR
+        text = (PATCH_DIR / 'upstream-hud-fixture-host.patch').read_text(encoding='utf-8')
+        added = [line[1:] for line in text.splitlines() if line.startswith('+') and not line.startswith('+++')]
+        removed = [line[1:] for line in text.splitlines() if line.startswith('-') and not line.startswith('---')]
+        self.assertEqual(removed, ["    assert.match(warnings.join('\\n'), /desktop packaging continues/)"])
+        self.assertIn("    if (process.platform === 'linux' && process.arch === 'x64') {", added)
+        self.assertIn("      assert.match(warnings.join('\\n'), /desktop packaging continues/)", added)
+        self.assertIn("      assert.deepEqual(warnings, ['[hud-modifier] linux-x64 needs a native build; "
+                      "modifier tap unavailable for this target'])", added)
+        # Test-only: no skip, no try/catch swallowing, and the empty-tree assertion stays.
+        self.assertFalse(any('skip' in line or 'catch' in line for line in added))
+        self.assertIn("     assert.equal(existsSync(join(distDir, 'native')), false)", text)
 
 
 if __name__ == '__main__':

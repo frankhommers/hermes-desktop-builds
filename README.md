@@ -151,7 +151,7 @@ requirements. The bundled Linux window-enumeration implementation additionally i
 that feature or certify native Wayland support. Across platforms, `get-windows` payloads
 are inspected, but their actual window-enumeration/permission behavior is not covered by
 the native PTY test. This tarball is not a distro package and does not register a launcher.
-Linux CI launches the real Electron renderer with `--ozone-platform=headless` and
+Linux CI launches the real Electron renderer on a disposable Xvfb display with
 `--no-sandbox` because hosted/headless environments may restrict
 Chromium user namespaces. That flag is **not** baked into the app or normal run advice.
 
